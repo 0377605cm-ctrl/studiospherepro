@@ -51,7 +51,7 @@ function ScalesPage() {
 
   // Build an ascending MIDI sequence: root → octave → root, no octave jumps mid-row.
   const ascendingMidis = useMemo(() => {
-    const base = 60 + scale.rootPc; // start at root in 4th octave area
+    const base = 48 + scale.rootPc; // start at root one octave lower (C3 region)
     const seq: number[] = [];
     let prev = -Infinity;
     for (const iv of SCALES[scale.scaleId].intervals) {
