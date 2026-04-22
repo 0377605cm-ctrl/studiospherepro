@@ -143,10 +143,11 @@ function ChannelSlider({ channel, label }: { channel: MixChannel; label: string 
   const [muted, setLocalMuted] = useState(() => isMuted(channel));
 
   useEffect(() => {
-    return subscribeAudio(() => {
+    const unsub = subscribeAudio(() => {
       setVol(getVolume(channel));
       setLocalMuted(isMuted(channel));
     });
+    return () => { unsub(); };
   }, [channel]);
 
   return (
