@@ -1,6 +1,8 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 
 import appCss from "../styles.css?url";
+import { AppStateProvider } from "@/lib/state";
+import { TopNav } from "@/components/TopNav";
 
 function NotFoundComponent() {
   return (
