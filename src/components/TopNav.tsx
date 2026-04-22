@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { AudioMixer } from "./AudioMixer";
 
 const links = [
   { to: "/", label: "Home" },
@@ -40,8 +41,13 @@ export function TopNav() {
               {l.label}
             </Link>
           ))}
+          <div className="ml-2 border-l border-border/50 pl-2">
+            <AudioMixer />
+          </div>
         </nav>
-        <details className="relative lg:hidden">
+        <div className="flex items-center gap-2 lg:hidden">
+          <AudioMixer />
+          <details className="relative">
           <summary className="list-none rounded-md border border-border px-3 py-1.5 text-xs font-mono uppercase tracking-wider text-muted-foreground cursor-pointer">
             Menu
           </summary>
@@ -57,7 +63,8 @@ export function TopNav() {
               </Link>
             ))}
           </div>
-        </details>
+          </details>
+        </div>
       </div>
     </header>
   );
