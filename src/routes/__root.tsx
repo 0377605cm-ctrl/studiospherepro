@@ -31,10 +31,10 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Music Builder Pro — Visual Music Theory & AI Music Toolkit" },
+      { title: "StudioSphere — Visual Music Theory & AI Music Toolkit" },
       { name: "description", content: "Visualize scales, generate riffs, navigate the circle of fifths, and analyze any track. The complete toolkit for guitar & piano." },
-      { name: "author", content: "Music Builder Pro" },
-      { property: "og:title", content: "Music Builder Pro — Visual Music Theory & AI Music Toolkit" },
+      { name: "author", content: "StudioSphere" },
+      { property: "og:title", content: "StudioSphere — Visual Music Theory & AI Music Toolkit" },
       { property: "og:description", content: "Visualize scales, generate riffs, navigate the circle of fifths, and analyze any track." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
@@ -81,7 +81,7 @@ function RootComponent() {
           <Outlet />
         </main>
         <footer className="border-t border-border/50 py-6 text-center text-xs text-muted-foreground font-mono">
-          MUSIC BUILDER PRO · v1.0 · BUILT FOR PLAYERS
+          STUDIOSPHERE · v1.0 · BUILT FOR PLAYERS
         </footer>
       </div>
     </AppStateProvider>
