@@ -22,7 +22,7 @@ export function TopNav() {
           </div>
           <div className="flex flex-col leading-tight">
             <span className="text-sm font-semibold tracking-tight">
-              Chris goes: <span className="text-gold">Pro</span>
+              Music Builder <span className="text-gold">Pro</span>
             </span>
             <span className="hidden text-[10px] font-mono uppercase tracking-widest text-muted-foreground sm:block">
               Music Theory · AI · Toolkit
