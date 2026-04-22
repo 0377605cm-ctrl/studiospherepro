@@ -4,6 +4,18 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@theme inline {
+  --font-display: "Space Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-note-root: var(--note-root);
+  --color-note-third: var(--note-third);
+  --color-note-fifth: var(--note-fifth);
+  --color-note-seventh: var(--note-seventh);
+  --color-note-other: var(--note-other);
+}
+
 /*
  * Design system definition.
  *
