@@ -29,16 +29,22 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "Chris goes: Pro — Visual Music Theory & AI Music Toolkit" },
+      { name: "description", content: "Visualize scales, generate riffs, navigate the circle of fifths, and analyze any track. The complete toolkit for guitar & piano." },
+      { name: "author", content: "Chris goes: Pro" },
+      { property: "og:title", content: "Chris goes: Pro — Visual Music Theory & AI Music Toolkit" },
+      { property: "og:description", content: "Visualize scales, generate riffs, navigate the circle of fifths, and analyze any track." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
+      { rel: "preconnect", href: "https://fonts.googleapis.com" },
+      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
+      {
+        rel: "stylesheet",
+        href: "https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap",
+      },
       {
         rel: "stylesheet",
         href: appCss,
@@ -52,7 +58,7 @@ export const Route = createRootRoute({
 
 function RootShell({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" className="dark">
       <head>
         <HeadContent />
       </head>
@@ -65,5 +71,17 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />;
+  return (
+    <AppStateProvider>
+      <div className="min-h-screen flex flex-col">
+        <TopNav />
+        <main className="flex-1">
+          <Outlet />
+        </main>
+        <footer className="border-t border-border/50 py-6 text-center text-xs text-muted-foreground font-mono">
+          CHRIS GOES: PRO · v1.0 · BUILT FOR PLAYERS
+        </footer>
+      </div>
+    </AppStateProvider>
+  );
 }
