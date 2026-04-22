@@ -4,7 +4,7 @@ import { Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "Music Builder Pro — Visual Music Theory & AI Music Toolkit" },
+      { title: "StudioSphere — Visual Music Theory & AI Music Toolkit" },
       { name: "description", content: "Learn scales, generate riffs, navigate the circle of fifths, and analyze any track. Guitar + Piano." },
     ],
   }),
