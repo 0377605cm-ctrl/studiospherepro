@@ -25,6 +25,33 @@ let pianoReady = false;
 let guitarReady = false;
 let unlocked = false;
 
+// Per-instrument volume nodes so users can mix piano vs guitar independently.
+let pianoVol: Tone.Volume | null = null;
+let guitarVol: Tone.Volume | null = null;
+let masterVol: Tone.Volume | null = null;
+// HTMLAudioElement destination — required to support setSinkId routing.
+// Tone routes everything through Tone.Destination → mediaStreamDest → <audio>.
+let mediaDest: MediaStreamAudioDestinationNode | null = null;
+let routerAudioEl: HTMLAudioElement | null = null;
+let currentSinkId = "default";
+
+// Listeners so the UI can re-render when audio state changes externally.
+const listeners = new Set<() => void>();
+function emit() {
+  listeners.forEach((l) => l());
+}
+export function subscribeAudio(l: () => void) {
+  listeners.add(l);
+  return () => listeners.delete(l);
+}
+
+function ensureMixer() {
+  if (masterVol) return;
+  masterVol = new Tone.Volume(0).toDestination();
+  pianoVol = new Tone.Volume(0).connect(masterVol);
+  guitarVol = new Tone.Volume(0).connect(masterVol);
+}
+
 const MIDI_TO_NOTE = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 function midiToNoteName(midi: number): string {
   const pc = ((midi % 12) + 12) % 12;
@@ -34,6 +61,7 @@ function midiToNoteName(midi: number): string {
 
 function ensurePiano() {
   if (pianoSampler) return pianoSampler;
+  ensureMixer();
   // Salamander Grand Piano — public sample set hosted by Tone.js
   pianoSampler = new Tone.Sampler({
     urls: {
@@ -51,13 +79,15 @@ function ensurePiano() {
     baseUrl: "https://tonejs.github.io/audio/salamander/",
     onload: () => {
       pianoReady = true;
+      emit();
     },
-  }).toDestination();
+  }).connect(pianoVol!);
   return pianoSampler;
 }
 
 function ensureGuitar() {
   if (guitarSampler) return guitarSampler;
+  ensureMixer();
   // Nylon/acoustic guitar samples from Tone.js demo audio set
   guitarSampler = new Tone.Sampler({
     urls: {
@@ -72,8 +102,9 @@ function ensureGuitar() {
     baseUrl: "https://nbrosowsky.github.io/tonejs-instruments/samples/guitar-acoustic/",
     onload: () => {
       guitarReady = true;
+      emit();
     },
-  }).toDestination();
+  }).connect(guitarVol!);
   return guitarSampler;
 }
 
