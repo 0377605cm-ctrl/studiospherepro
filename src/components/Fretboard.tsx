@@ -35,6 +35,7 @@ export function Fretboard({
   const fretCount = endFret - startFret + 1;
   const numStrings = 6;
   const stringSpacing = (height - 30) / (numStrings - 1);
+  const NUT_WIDTH = 30; // px reserved for string labels / nut
 
   // index positions for fast lookup
   const posMap = new Map<string, Position>();
@@ -45,7 +46,7 @@ export function Fretboard({
       <div className="relative" style={{ minWidth: 640, height: height + 40 }}>
         {/* Fret numbers */}
         <div className="mb-2 flex">
-          <div style={{ width: 30 }} />
+          <div style={{ width: NUT_WIDTH, flex: "0 0 auto" }} />
           {Array.from({ length: fretCount }).map((_, i) => {
             const fret = startFret + i;
             return (
@@ -61,7 +62,7 @@ export function Fretboard({
 
         <div className="relative" style={{ height }}>
           {/* Background fret marker dots */}
-          <div className="absolute inset-0 flex" style={{ paddingLeft: 30 }}>
+          <div className="absolute inset-0 flex" style={{ paddingLeft: NUT_WIDTH }}>
             {Array.from({ length: fretCount }).map((_, i) => {
               const fret = startFret + i;
               const isMarker = FRET_MARKERS.includes(fret);
@@ -92,7 +93,7 @@ export function Fretboard({
                 {/* string line */}
                 <div
                   className="absolute bg-gradient-to-r from-zinc-500/70 via-zinc-300/70 to-zinc-500/70"
-                  style={{ top: y, left: 30, right: 0, height: thickness }}
+                  style={{ top: y, left: NUT_WIDTH, right: 0, height: thickness }}
                 />
                 <div
                   className="absolute -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
@@ -105,7 +106,7 @@ export function Fretboard({
           })}
 
           {/* Fret wires */}
-          <div className="absolute inset-0 flex" style={{ paddingLeft: 30 }}>
+          <div className="absolute inset-0 flex" style={{ paddingLeft: NUT_WIDTH }}>
             {Array.from({ length: fretCount + 1 }).map((_, i) => (
               <div
                 key={i}
@@ -127,7 +128,6 @@ export function Fretboard({
               if (!found && !inScale) return null;
               const isRoot = found?.isRoot ?? pc === rootPc;
               const label = found?.label ?? NOTE_NAMES_SHARP[pc];
-              const cellLeft = 30 + ((fIdx + 0.5) / fretCount) * (100 - (30 / 640) * 100) + "%";
               const handleClick = () => {
                 const midi = STANDARD_TUNING_MIDI[stringIdx] + fret;
                 playMidi(midi, { duration: 0.5, type: "sawtooth" });
@@ -144,7 +144,12 @@ export function Fretboard({
                         ? "border-gold/60 bg-gold/20 text-gold"
                         : "border-border/40 bg-background/60 text-muted-foreground hover:border-gold/40 hover:text-gold"
                   }`}
-                  style={{ top: y, left: `calc(${cellLeft})`, width: size, height: size }}
+                  style={{
+                    top: y,
+                    left: `calc(${NUT_WIDTH}px + (100% - ${NUT_WIDTH}px) * ${(fIdx + 0.5) / fretCount})`,
+                    width: size,
+                    height: size,
+                  }}
                 >
                   {label}
                 </button>
