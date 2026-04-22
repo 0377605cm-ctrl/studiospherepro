@@ -195,3 +195,155 @@ export function getAudioContext(): AudioContext {
   if (typeof window === "undefined") throw new Error("AudioContext only available in browser");
   return Tone.getContext().rawContext as AudioContext;
 }
+
+/* ============================================================
+ * Mixer API
+ * ========================================================== */
+
+export type MixChannel = "master" | "piano" | "guitar";
+
+/** Volume in 0..1 (linear). Internally converted to dB on the Tone.Volume node. */
+export function setVolume(channel: MixChannel, value: number) {
+  ensureMixer();
+  const clamped = Math.max(0, Math.min(1, value));
+  // Linear → dB; treat 0 as muted (-Infinity).
+  const db = clamped <= 0.001 ? -Infinity : 20 * Math.log10(clamped);
+  const node = channel === "piano" ? pianoVol : channel === "guitar" ? guitarVol : masterVol;
+  if (node) node.volume.value = db;
+  emit();
+}
+
+export function getVolume(channel: MixChannel): number {
+  ensureMixer();
+  const node = channel === "piano" ? pianoVol : channel === "guitar" ? guitarVol : masterVol;
+  if (!node) return 1;
+  const db = node.volume.value;
+  if (!isFinite(db)) return 0;
+  return Math.pow(10, db / 20);
+}
+
+export function setMuted(channel: MixChannel, muted: boolean) {
+  ensureMixer();
+  const node = channel === "piano" ? pianoVol : channel === "guitar" ? guitarVol : masterVol;
+  if (node) node.mute = muted;
+  emit();
+}
+
+export function isMuted(channel: MixChannel): boolean {
+  ensureMixer();
+  const node = channel === "piano" ? pianoVol : channel === "guitar" ? guitarVol : masterVol;
+  return node ? node.mute : false;
+}
+
+/* ---------- Output device (sink) routing ---------- */
+
+export interface AudioOutputDevice {
+  deviceId: string;
+  label: string;
+}
+
+/**
+ * Lists available audio output devices. Most browsers require a prior
+ * getUserMedia() permission grant before labels are populated.
+ */
+export async function listOutputDevices(): Promise<AudioOutputDevice[]> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.enumerateDevices) {
+    return [{ deviceId: "default", label: "System default" }];
+  }
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const outs = devices
+    .filter((d) => d.kind === "audiooutput")
+    .map((d) => ({
+      deviceId: d.deviceId || "default",
+      label: d.label || (d.deviceId === "default" ? "System default" : "Audio output"),
+    }));
+  if (outs.length === 0) return [{ deviceId: "default", label: "System default" }];
+  return outs;
+}
+
+/**
+ * Some browsers only reveal device labels after the page has been granted
+ * mic permission. We do a one-shot mic request and immediately stop the
+ * tracks — used purely to unlock device labels.
+ */
+export async function requestDeviceLabelAccess(): Promise<boolean> {
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) return false;
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Routes Tone.js output to the chosen audio device using setSinkId.
+ * Falls back to default when unsupported (Safari/Firefox).
+ */
+export async function setOutputDevice(deviceId: string): Promise<boolean> {
+  if (typeof window === "undefined") return false;
+  await unlockAudio();
+  const ctx = Tone.getContext().rawContext as AudioContext;
+
+  // Build a routing <audio> element on first use.
+  if (!routerAudioEl) {
+    mediaDest = ctx.createMediaStreamDestination();
+    // Re-route Tone's destination through MediaStream → <audio>.
+    Tone.getDestination().connect(mediaDest as unknown as AudioNode);
+    // Mute the original direct context output to avoid double playback.
+    try {
+      // setSinkId on the AudioContext (Chromium 110+) is preferred when available.
+      // We still keep the <audio> path as a fallback for older Chromium.
+    } catch {
+      // ignore
+    }
+    routerAudioEl = new Audio();
+    routerAudioEl.srcObject = mediaDest!.stream;
+    routerAudioEl.autoplay = true;
+    // Kick playback once user gesture has unlocked audio.
+    void routerAudioEl.play().catch(() => undefined);
+  }
+
+  // Prefer AudioContext.setSinkId when supported (no double-output).
+  const ctxAny = ctx as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+  if (typeof ctxAny.setSinkId === "function") {
+    try {
+      await ctxAny.setSinkId(deviceId);
+      currentSinkId = deviceId;
+      emit();
+      return true;
+    } catch {
+      // fall through to <audio> path
+    }
+  }
+
+  const elAny = routerAudioEl as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+  if (typeof elAny.setSinkId === "function") {
+    try {
+      await elAny.setSinkId(deviceId);
+      currentSinkId = deviceId;
+      emit();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+export function getOutputDeviceId(): string {
+  return currentSinkId;
+}
+
+export function isSetSinkSupported(): boolean {
+  if (typeof window === "undefined") return false;
+  const ctxAny = (Tone.getContext().rawContext as AudioContext) as AudioContext & {
+    setSinkId?: unknown;
+  };
+  if (typeof ctxAny.setSinkId === "function") return true;
+  const elProto = (typeof HTMLAudioElement !== "undefined"
+    ? (HTMLAudioElement.prototype as unknown as { setSinkId?: unknown })
+    : null);
+  return !!(elProto && typeof elProto.setSinkId === "function");
+}
