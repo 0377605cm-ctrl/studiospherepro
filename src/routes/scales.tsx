@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useAppState } from "@/lib/state";
 import {
   buildScale,
@@ -45,6 +45,36 @@ function ScalesPage() {
   const showGuitar = instrument === "guitar" || instrument === "both";
   const showPiano = instrument === "piano" || instrument === "both";
 
+  // Sound source for the "Notes in scale" row
+  const [scaleSound, setScaleSound] = useState<"piano" | "guitar">("piano");
+  const soundType: OscillatorType = scaleSound === "piano" ? "triangle" : "sawtooth";
+
+  // Build an ascending MIDI sequence: root → octave → root, no octave jumps mid-row.
+  const ascendingMidis = useMemo(() => {
+    const base = 60 + scale.rootPc; // start at root in 4th octave area
+    const seq: number[] = [];
+    let prev = -Infinity;
+    for (const iv of SCALES[scale.scaleId].intervals) {
+      const m = base + iv;
+      if (m <= prev) {
+        // shouldn't happen since intervals are ascending, but guard anyway
+        seq.push(m + 12);
+        prev = m + 12;
+      } else {
+        seq.push(m);
+        prev = m;
+      }
+    }
+    seq.push(base + 12); // octave at the end
+    return seq;
+  }, [scale]);
+
+  const playScaleAscending = () => {
+    ascendingMidis.forEach((m, i) => {
+      setTimeout(() => playMidi(m, { duration: 0.4, type: soundType }), i * 220);
+    });
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
       <PageHeader
@@ -56,27 +86,65 @@ function ScalesPage() {
       <GlobalControls />
 
       {/* Scale notes */}
-      <Card kicker="// Notes in scale">
-        <div className="flex flex-wrap gap-2">
-          {scale.noteNames.map((n, i) => {
-            const midi = 60 + scale.notes[i];
-            const isRoot = i === 0;
+      <Card
+        kicker="// Notes in scale"
+        right={
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Sound
+            </span>
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {(["piano", "guitar"] as const).map((s) => (
+                <button
+                  key={s}
+                  onClick={() => setScaleSound(s)}
+                  className={`px-3 py-1 font-mono text-[10px] uppercase tracking-widest transition-colors ${
+                    scaleSound === s
+                      ? "bg-gold text-gold-foreground"
+                      : "bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  {s}
+                </button>
+              ))}
+            </div>
+            <button
+              onClick={playScaleAscending}
+              className="rounded-md border border-gold/60 bg-gold/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-gold transition-colors hover:bg-gold/20"
+            >
+              ▶ Play scale
+            </button>
+          </div>
+        }
+      >
+        <div className="flex flex-nowrap items-stretch gap-2 overflow-x-auto pb-1">
+          {ascendingMidis.map((midi, i) => {
+            const pc = ((midi % 12) + 12) % 12;
+            const isRoot = pc === scale.rootPc;
+            const isOctave = i === ascendingMidis.length - 1;
+            const name = NOTE_NAMES_SHARP[pc];
             return (
               <button
                 key={i}
-                onClick={() => playMidi(midi, { duration: 0.4 })}
-                className={`rounded-md border px-3 py-2 font-mono text-sm transition-all hover:scale-105 ${
+                onClick={() => playMidi(midi, { duration: 0.4, type: soundType })}
+                className={`flex min-w-[64px] flex-shrink-0 flex-col items-center rounded-md border px-3 py-2 font-mono text-sm transition-all hover:scale-105 ${
                   isRoot
                     ? "border-gold bg-gold text-gold-foreground glow-gold"
                     : "border-border bg-secondary text-foreground hover:border-gold/40"
                 }`}
               >
-                <span className="text-[9px] uppercase tracking-widest opacity-70">{degreeLabel(i)}</span>
-                <div className="text-base font-semibold">{n}</div>
+                <span className="text-[9px] uppercase tracking-widest opacity-70">
+                  {isOctave ? "8" : degreeLabel(i)}
+                </span>
+                <span className="text-base font-semibold">{name}</span>
               </button>
             );
           })}
         </div>
+        <p className="mt-3 font-mono text-xs text-muted-foreground">
+          Ascending row — root to octave, no jumps. Click "Play scale" to hear it on{" "}
+          <span className="text-gold">{scaleSound}</span>.
+        </p>
       </Card>
 
       {showPiano && (
