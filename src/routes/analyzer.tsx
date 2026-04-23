@@ -6,6 +6,8 @@ import { buildScale, noteToPc, NOTE_NAMES_SHARP, type ScaleId } from "@/lib/musi
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
 import { fretboardForScale } from "@/lib/music/theory";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { GuitarTab } from "@/components/GuitarTab";
 
 export const Route = createFileRoute("/analyzer")({
   head: () => ({
