@@ -19,6 +19,54 @@ export const Route = createFileRoute("/analyzer")({
 
 type Result = Awaited<ReturnType<typeof analyzeAudioBuffer>>;
 
+const MAX_FILE_SIZE_MB = 50;
+const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+/** Detect mobile / low-memory devices so we can warn users + downsample. */
+function isLowPowerDevice(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent || "";
+  const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+  const dm = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  const lowMem = typeof dm === "number" && dm <= 4;
+  const fewCores = (navigator.hardwareConcurrency ?? 8) <= 4;
+  return isMobile || lowMem || fewCores;
+}
+
+/** Pretty-print decode errors so users actually see why it failed. */
+function describeDecodeError(err: unknown, file: File): string {
+  const raw = err instanceof Error ? err.message : String(err);
+  const lower = raw.toLowerCase();
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+
+  if (!raw || lower.includes("unable to decode") || lower.includes("encodingerror")) {
+    if (ext === "m4a" || ext === "aac" || ext === "mp4") {
+      return `This browser couldn't decode the ${ext.toUpperCase()} file. Try converting it to MP3 or WAV and re-uploading.`;
+    }
+    return `This browser couldn't decode "${file.name}". The codec may be unsupported or the file is corrupt. Try re-exporting as MP3 or WAV.`;
+  }
+  if (lower.includes("memory") || lower.includes("allocation")) {
+    return "Ran out of memory decoding this file. Try a shorter clip or a smaller MP3.";
+  }
+  return raw || "Unknown decoding error.";
+}
+
+/** Downsample/mono-mix an AudioBuffer using OfflineAudioContext to cut memory + CPU. */
+async function downsampleBuffer(buffer: AudioBuffer, targetSampleRate: number): Promise<AudioBuffer> {
+  if (buffer.sampleRate <= targetSampleRate && buffer.numberOfChannels === 1) return buffer;
+  const length = Math.ceil((buffer.duration * targetSampleRate));
+  const OAC =
+    (window as unknown as { OfflineAudioContext: typeof OfflineAudioContext }).OfflineAudioContext ||
+    (window as unknown as { webkitOfflineAudioContext: typeof OfflineAudioContext }).webkitOfflineAudioContext;
+  if (!OAC) return buffer;
+  const oac = new OAC(1, length, targetSampleRate);
+  const src = oac.createBufferSource();
+  src.buffer = buffer;
+  src.connect(oac.destination);
+  src.start(0);
+  return oac.startRendering();
+}
+
 function AnalyzerPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "analyzing" | "done" | "error">("idle");
   const [result, setResult] = useState<Result | null>(null);
@@ -26,30 +74,87 @@ function AnalyzerPage() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [keyOverride, setKeyOverride] = useState<{ root: string; mode: "major" | "minor" } | null>(null);
+  const [progressNote, setProgressNote] = useState<string>("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const lowPower = isLowPowerDevice();
 
   const handleFile = async (file: File) => {
-    setStatus("loading");
     setErrorMsg("");
     setResult(null);
+    setProgressNote("");
+
+    // 1. Hard size limit
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setStatus("error");
+      setErrorMsg(
+        `File is ${(file.size / (1024 * 1024)).toFixed(1)} MB — over the ${MAX_FILE_SIZE_MB} MB limit. ` +
+          `Try trimming the clip or exporting at a lower bitrate.`,
+      );
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setStatus("loading");
+    setFileName(file.name);
+
     try {
       const arrayBuffer = await file.arrayBuffer();
+
+      // Build / resume an AudioContext (Safari + iOS need a user gesture; this handler IS a gesture).
       const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      if (!Ctor) {
+        throw new Error("Your browser doesn't expose AudioContext — try Chrome, Firefox, Safari 14+, or Edge.");
+      }
       const ac = new Ctor();
-      const buffer = await ac.decodeAudioData(arrayBuffer.slice(0));
+      if (ac.state === "suspended") {
+        try { await ac.resume(); } catch { /* ignore */ }
+      }
+
+      // Wrap decodeAudioData with both promise + callback paths (Safari needs callbacks).
+      let buffer: AudioBuffer;
+      try {
+        buffer = await new Promise<AudioBuffer>((resolve, reject) => {
+          // Some Safari builds reject silently from the promise overload — use callbacks.
+          const p = ac.decodeAudioData(arrayBuffer.slice(0), resolve, reject);
+          if (p && typeof (p as Promise<AudioBuffer>).then === "function") {
+            (p as Promise<AudioBuffer>).then(resolve, reject);
+          }
+        });
+      } catch (decodeErr) {
+        throw new Error(describeDecodeError(decodeErr, file));
+      }
+
       setStatus("analyzing");
+      setProgressNote(
+        lowPower
+          ? "Low-power device detected — downsampling to 16 kHz mono before analysis…"
+          : "Analyzing chroma + chords…",
+      );
+
+      // On phones / low-RAM devices, downsample to keep memory under control.
+      let workBuffer = buffer;
+      if (lowPower && buffer.sampleRate > 16000) {
+        try {
+          workBuffer = await downsampleBuffer(buffer, 16000);
+        } catch (e) {
+          console.warn("Downsample failed, falling back to original buffer", e);
+        }
+      }
+
       // give UI a tick
       await new Promise((r) => setTimeout(r, 50));
-      const res = await analyzeAudioBuffer(buffer, 2);
+      const res = await analyzeAudioBuffer(workBuffer, lowPower ? 4 : 2);
       setResult(res);
-      setFileName(file.name);
       const url = URL.createObjectURL(file);
       setAudioUrl(url);
       setStatus("done");
+      setProgressNote("");
     } catch (e) {
       console.error(e);
-      setErrorMsg(e instanceof Error ? e.message : "Failed to analyze audio");
+      setErrorMsg(e instanceof Error ? e.message : describeDecodeError(e, file));
       setStatus("error");
+      setProgressNote("");
     }
   };
 
@@ -73,10 +178,12 @@ function AnalyzerPage() {
           <div className="text-center">
             <div className="font-semibold">{fileName || "Drop an MP3 or click to upload"}</div>
             <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              MP3, WAV, OGG · processed locally · YouTube import requires backend
+              MP3, WAV, OGG · max {MAX_FILE_SIZE_MB} MB · processed locally
+              {lowPower && " · mobile-optimized mode"}
             </div>
           </div>
           <input
+            ref={fileInputRef}
             type="file"
             accept="audio/*"
             className="hidden"
@@ -87,8 +194,31 @@ function AnalyzerPage() {
           />
         </label>
         {status === "loading" && <p className="mt-3 text-sm text-muted-foreground">Decoding audio…</p>}
-        {status === "analyzing" && <p className="mt-3 text-sm text-gold">Analyzing chroma + chords… (a few seconds)</p>}
-        {status === "error" && <p className="mt-3 text-sm text-rose-400">{errorMsg}</p>}
+        {status === "analyzing" && (
+          <p className="mt-3 text-sm text-gold">{progressNote || "Analyzing chroma + chords… (a few seconds)"}</p>
+        )}
+        {status === "error" && (
+          <div className="mt-3 rounded-md border border-rose-400/40 bg-rose-400/5 p-3">
+            <div className="font-mono text-[10px] uppercase tracking-widest text-rose-400">Decode error</div>
+            <p className="mt-1 text-sm text-rose-200">{errorMsg}</p>
+            <button
+              onClick={() => {
+                setStatus("idle");
+                setErrorMsg("");
+                if (fileInputRef.current) fileInputRef.current.value = "";
+              }}
+              className="mt-2 rounded border border-rose-400/40 px-3 py-1 text-xs text-rose-200 hover:bg-rose-400/10"
+            >
+              Try another file
+            </button>
+          </div>
+        )}
+        {lowPower && status === "idle" && (
+          <p className="mt-3 text-[11px] font-mono text-muted-foreground">
+            📱 Mobile / low-memory device detected — files will be downsampled to keep things stable. For best results,
+            use clips under ~5 minutes.
+          </p>
+        )}
       </Card>
 
       {result && finalKey && (
