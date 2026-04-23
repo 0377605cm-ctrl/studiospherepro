@@ -2,8 +2,8 @@ import {
   buildScale,
   STANDARD_TUNING_PCS,
   STANDARD_TUNING_MIDI,
-  fretboardForScale,
   PROGRESSIONS,
+  CHORD_FORMULAS,
   type Difficulty,
   type Genre,
   type ScaleId,
@@ -26,6 +26,16 @@ export interface Riff {
   difficulty: Difficulty;
   bars: number;
   beatsPerBar: number;
+  chordBars?: ChordBar[]; // optional chord backing per bar
+  progressionName?: string;
+}
+
+export interface ChordBar {
+  rootPc: number;
+  chordPcs: number[]; // pitch classes
+  midis: number[]; // playable midi voicing
+  symbol: string;
+  degree: number;
 }
 
 function mulberry32(seed: number) {
@@ -59,13 +69,45 @@ function findPosition(pc: number, scaleNotes: number[], preferredString = 2): { 
 }
 
 const GENRE_DEFAULTS: Record<Genre, { bpm: number; preferredString: number; rhythmPattern: number[] }> = {
-  blues: { bpm: 90, preferredString: 1, rhythmPattern: [1, 0.5, 0.5, 1, 1] },
-  rock: { bpm: 120, preferredString: 2, rhythmPattern: [0.5, 0.5, 0.5, 0.5, 1, 1] },
-  jazz: { bpm: 140, preferredString: 3, rhythmPattern: [0.33, 0.66, 0.33, 0.66, 1] },
-  rnb: { bpm: 85, preferredString: 2, rhythmPattern: [0.5, 0.5, 1, 0.5, 0.5, 1] },
-  trap: { bpm: 75, preferredString: 0, rhythmPattern: [0.5, 0.25, 0.25, 1, 0.5, 0.5] },
-  metal: { bpm: 160, preferredString: 0, rhythmPattern: [0.25, 0.25, 0.25, 0.25, 1, 0.5, 0.5] },
+  blues:  { bpm: 90,  preferredString: 1, rhythmPattern: [0.66, 0.34, 1, 0.5, 0.5, 1, 0.66, 0.34] },
+  rock:   { bpm: 120, preferredString: 2, rhythmPattern: [0.5, 0.5, 0.5, 0.5, 1, 1, 0.5, 0.5] },
+  jazz:   { bpm: 140, preferredString: 3, rhythmPattern: [0.66, 0.34, 0.66, 0.34, 0.5, 0.5, 1] },
+  rnb:    { bpm: 85,  preferredString: 2, rhythmPattern: [0.5, 0.5, 0.25, 0.25, 0.5, 1, 0.5, 0.5] },
+  trap:   { bpm: 75,  preferredString: 0, rhythmPattern: [0.5, 0.25, 0.25, 1, 0.5, 0.5, 1] },
+  metal:  { bpm: 160, preferredString: 0, rhythmPattern: [0.25, 0.25, 0.25, 0.25, 0.5, 0.5, 1, 0.5, 0.5] },
 };
+
+/** Genres where chord backing materially helps the riff. */
+const CHORD_BACKED_GENRES: Genre[] = ["blues", "jazz", "rnb"];
+
+function buildChordVoicing(rootPc: number, chordIntervals: number[], baseMidi = 48): number[] {
+  // Root + 3rd + 5th (and 7th if present), spread close-position around baseMidi.
+  return chordIntervals.map((iv) => baseMidi + ((rootPc + iv - (baseMidi % 12) + 24) % 12) + 12);
+}
+
+function chordQualityForDegree(genre: Genre, deg: number, scale: { notes: number[]; rootPc: number }): keyof typeof CHORD_FORMULAS {
+  // Simple genre-aware mapping
+  if (genre === "blues") {
+    // dominant 7 on I, IV, V — staple blues sound
+    return "dom7";
+  }
+  if (genre === "jazz") {
+    // ii-V-I → m7, dom7, maj7
+    if (deg === 1) return "min7";
+    if (deg === 4) return "dom7";
+    if (deg === 0) return "maj7";
+    return "min7";
+  }
+  if (genre === "rnb") {
+    if (deg === 0) return "maj7";
+    if (deg === 4) return "dom7";
+    return "min7";
+  }
+  // fallback triads from diatonic position
+  const interval = (scale.notes[deg % scale.notes.length] - scale.rootPc + 12) % 12;
+  // major-ish if interval is 0,5,7; minor otherwise
+  return interval === 0 || interval === 5 || interval === 7 ? "maj" : "min";
+}
 
 /** Generate a riff deterministically from key/scale/genre/difficulty + seed. */
 export function generateRiff(opts: {
@@ -83,8 +125,8 @@ export function generateRiff(opts: {
   const { bpm, preferredString, rhythmPattern } = GENRE_DEFAULTS[genre];
 
   // Difficulty controls range, density, ornamentation
-  const noteDensity = { easy: 0.7, intermediate: 1, difficult: 1.4, "very-difficult": 1.8 }[difficulty];
-  const rangeOctaves = { easy: 1, intermediate: 1, difficult: 2, "very-difficult": 2 }[difficulty];
+  const noteDensity = { easy: 0.8, intermediate: 1, difficult: 1.3, "very-difficult": 1.6 }[difficulty];
+  const rangeOctaves = { easy: 1, intermediate: 2, difficult: 2, "very-difficult": 2 }[difficulty];
 
   // Build available pitches across desired range
   const available: number[] = [];
@@ -93,6 +135,26 @@ export function generateRiff(opts: {
     for (const interval of scale.notes.map((pc) => (pc - scale.rootPc + 12) % 12).sort((a, b) => a - b)) {
       available.push(baseMidi + 12 * oct + interval);
     }
+  }
+
+  // Build chord progression so the riff can target chord tones on strong beats.
+  const progs = PROGRESSIONS[genre];
+  const prog = progs[Math.floor(rand() * progs.length)];
+  const chordBars: ChordBar[] = [];
+  for (let b = 0; b < bars; b++) {
+    const deg = prog.degrees[b % prog.degrees.length];
+    const rootPc = scale.notes[deg % scale.notes.length];
+    const quality = chordQualityForDegree(genre, deg, scale);
+    const intervals = CHORD_FORMULAS[quality].intervals;
+    const chordPcs = intervals.map((i) => (rootPc + i) % 12);
+    const midis = buildChordVoicing(rootPc, intervals, 48);
+    chordBars.push({
+      rootPc,
+      chordPcs,
+      midis,
+      degree: deg,
+      symbol: ["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"][rootPc] + CHORD_FORMULAS[quality].suffix,
+    });
   }
 
   const notes: RiffNote[] = [];
@@ -111,13 +173,27 @@ export function generateRiff(opts: {
       continue;
     }
 
-    // pick next note - prefer step-wise motion
-    const candidates = available
-      .map((m) => ({ m, dist: Math.abs(m - prevMidi) }))
-      .sort((a, b) => a.dist - b.dist);
-    // weighted random toward closer notes
-    const pickIdx = Math.floor(Math.pow(rand(), 2) * Math.min(candidates.length, 5));
-    const midi = candidates[pickIdx].m;
+    // Determine current chord & whether this beat is "strong" (downbeat or beat 3)
+    const currentBar = Math.min(bars - 1, Math.floor(beat / beatsPerBar));
+    const beatInBar = beat - currentBar * beatsPerBar;
+    const isStrongBeat = Math.abs(beatInBar - Math.round(beatInBar)) < 0.05 &&
+      (Math.round(beatInBar) === 0 || Math.round(beatInBar) === 2);
+    const chord = chordBars[currentBar];
+
+    // Build candidates: prefer chord tones on strong beats, prefer step-wise motion always.
+    const scored = available.map((m) => {
+      const dist = Math.abs(m - prevMidi);
+      const isChordTone = chord.chordPcs.includes(m % 12);
+      // Lower score = better. Step-wise motion + chord tone bias.
+      let score = dist;
+      if (isStrongBeat && !isChordTone) score += 6;
+      if (isStrongBeat && isChordTone) score -= 2;
+      // discourage huge leaps
+      if (dist > 7) score += 4;
+      return { m, score };
+    }).sort((a, b) => a.score - b.score);
+    const pickIdx = Math.floor(Math.pow(rand(), 2.2) * Math.min(scored.length, 4));
+    const midi = scored[pickIdx].m;
     prevMidi = midi;
 
     const pc = midi % 12;
@@ -135,7 +211,7 @@ export function generateRiff(opts: {
     beat += dur;
   }
 
-  // Anchor: ensure first note is the root
+  // Anchor: first note = root, last note = root or chord tone of last bar
   if (notes.length > 0) {
     const rootPos = findPosition(scale.rootPc, scale.notes, preferredString);
     if (rootPos) {
@@ -146,9 +222,33 @@ export function generateRiff(opts: {
         fret: rootPos.fret,
       };
     }
+    // resolve to root on last note
+    const last = notes[notes.length - 1];
+    const resolvePos = findPosition(scale.rootPc, scale.notes, preferredString);
+    if (resolvePos) {
+      notes[notes.length - 1] = {
+        ...last,
+        midi: STANDARD_TUNING_MIDI[resolvePos.string] + resolvePos.fret,
+        string: resolvePos.string,
+        fret: resolvePos.fret,
+      };
+    }
   }
 
-  return { notes, bpm, key, scaleId, genre, difficulty, bars, beatsPerBar };
+  const useChords = CHORD_BACKED_GENRES.includes(genre);
+
+  return {
+    notes,
+    bpm,
+    key,
+    scaleId,
+    genre,
+    difficulty,
+    bars,
+    beatsPerBar,
+    chordBars: useChords ? chordBars : undefined,
+    progressionName: prog.name,
+  };
 }
 
 /** Render a riff to ASCII guitar TAB. */
