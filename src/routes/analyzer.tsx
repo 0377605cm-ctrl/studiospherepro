@@ -185,11 +185,17 @@ function AnalyzerPage() {
           <input
             ref={fileInputRef}
             type="file"
-            accept="audio/*"
-            className="hidden"
+            // iPadOS / iOS Safari grays out files in the Files app when accept is too narrow
+            // (many MP3s in iCloud / Dropbox report application/octet-stream).
+            // Listing both the MIME wildcard AND explicit extensions makes them selectable.
+            accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg,.oga,.flac,.webm,.mp4"
+            // Visually hidden but still focusable/clickable — `display:none` can break iPad gesture chains.
+            className="absolute h-px w-px overflow-hidden opacity-0"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) handleFile(f);
+              // Clear value so re-selecting the same file still fires onChange
+              e.target.value = "";
             }}
           />
         </label>
