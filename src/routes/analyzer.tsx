@@ -268,31 +268,50 @@ function AnalyzerPage() {
             </Card>
           )}
 
-          <Card kicker={`// Chord progression${confidenceTier === "medium" ? " (approximate)" : ""}`}>
-            <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-              {result.segments.map((seg, i) => (
-                <div
-                  key={i}
-                  className="rounded-md border border-border bg-secondary/40 p-2 text-center"
-                  onClick={() => {
-                    if (audioRef.current) {
-                      audioRef.current.currentTime = seg.startSec;
-                      audioRef.current.play();
-                    }
-                  }}
-                  style={{ cursor: "pointer" }}
-                >
-                  <div className="font-mono text-[9px] text-muted-foreground">
-                    {Math.floor(seg.startSec / 60)}:{(seg.startSec % 60).toFixed(0).padStart(2, "0")}
-                  </div>
-                  <div className="text-base font-semibold">{seg.chord.symbol}</div>
-                  <div className="mt-1 h-1 overflow-hidden rounded bg-background">
-                    <div className="h-full bg-gold/60" style={{ width: `${seg.chord.confidence * 100}%` }} />
-                  </div>
+          <Card kicker={`// Output${confidenceTier === "medium" ? " (approximate)" : ""}`}>
+            <Tabs defaultValue="chords" className="w-full">
+              <TabsList className="bg-secondary/40">
+                <TabsTrigger value="chords">Chord sheet</TabsTrigger>
+                <TabsTrigger value="tab">Guitar TAB</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="chords">
+                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
+                  {result.segments.map((seg, i) => (
+                    <div
+                      key={i}
+                      className="rounded-md border border-border bg-secondary/40 p-2 text-center"
+                      onClick={() => {
+                        if (audioRef.current) {
+                          audioRef.current.currentTime = seg.startSec;
+                          audioRef.current.play();
+                        }
+                      }}
+                      style={{ cursor: "pointer" }}
+                    >
+                      <div className="font-mono text-[9px] text-muted-foreground">
+                        {Math.floor(seg.startSec / 60)}:{(seg.startSec % 60).toFixed(0).padStart(2, "0")}
+                      </div>
+                      <div className="text-base font-semibold">{seg.chord.symbol}</div>
+                      <div className="mt-1 h-1 overflow-hidden rounded bg-background">
+                        <div className="h-full bg-gold/60" style={{ width: `${seg.chord.confidence * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-            <p className="mt-3 text-xs font-mono text-muted-foreground">Click a chord to seek the audio.</p>
+                <p className="mt-3 text-xs font-mono text-muted-foreground">Click a chord to seek the audio.</p>
+              </TabsContent>
+
+              <TabsContent value="tab">
+                <GuitarTab
+                  segments={result.segments.map((s) => ({ startSec: s.startSec, chord: s.chord }))}
+                  bpm={result.bpm.bpm}
+                  keyRoot={finalKey.root}
+                  keyMode={finalKey.mode}
+                  audioEl={audioRef.current}
+                />
+              </TabsContent>
+            </Tabs>
           </Card>
 
           <SuggestedScales root={finalKey.root} mode={finalKey.mode} />
