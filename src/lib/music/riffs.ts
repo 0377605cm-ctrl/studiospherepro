@@ -362,16 +362,18 @@ export function riffToTab(riff: Riff): string {
   const totalSlots = Math.ceil(riff.bars * riff.beatsPerBar * 4); // sixteenth note resolution
   // Build per-string arrays
   const lines: string[][] = stringChars.map(() => Array(totalSlots).fill("-"));
+  const placeNote = (str: number, fret: number, slot: number) => {
+    const visualString = 5 - str;
+    if (slot < 0 || slot >= totalSlots || !lines[visualString]) return;
+    const fretStr = fret.toString();
+    for (let i = 0; i < fretStr.length; i++) {
+      if (slot + i < totalSlots) lines[visualString][slot + i] = fretStr[i];
+    }
+  };
   for (const n of riff.notes) {
     const slot = Math.round(n.startBeat * 4);
-    const visualString = 5 - n.string; // string 0 (lowE) -> bottom (index 5)
-    if (slot >= 0 && slot < totalSlots && lines[visualString]) {
-      const fret = n.fret.toString();
-      // place each char of fret number, padding adjacent slot if 2 digits
-      for (let i = 0; i < fret.length; i++) {
-        if (slot + i < totalSlots) lines[visualString][slot + i] = fret[i];
-      }
-    }
+    placeNote(n.string, n.fret, slot);
+    if (n.extras) for (const ex of n.extras) placeNote(ex.string, ex.fret, slot);
   }
   // join
   return lines.map((line, i) => `${stringChars[i]}|${line.join("")}|`).join("\n");
