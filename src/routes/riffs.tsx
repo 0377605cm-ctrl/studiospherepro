@@ -162,15 +162,26 @@ function RiffsPage() {
 
       <Card kicker="// Fretboard preview">
         <Fretboard
-          positions={riff.notes.map((n) => ({
-            string: n.string,
-            fret: n.fret,
-            pc: n.midi % 12,
-            isRoot: n.midi % 12 === ((riff.notes[0]?.midi ?? 0) % 12),
-            label: n.fret.toString(),
-          }))}
+          positions={riff.notes.flatMap((n) => {
+            const rootPc = (riff.notes[0]?.midi ?? 0) % 12;
+            const main = {
+              string: n.string,
+              fret: n.fret,
+              pc: n.midi % 12,
+              isRoot: n.midi % 12 === rootPc,
+              label: n.fret.toString(),
+            };
+            const extras = (n.extras ?? []).map((ex) => ({
+              string: ex.string,
+              fret: ex.fret,
+              pc: ex.midi % 12,
+              isRoot: ex.midi % 12 === rootPc,
+              label: ex.fret.toString(),
+            }));
+            return [main, ...extras];
+          })}
           startFret={0}
-          endFret={Math.max(7, ...riff.notes.map((n) => n.fret)) + 1}
+          endFret={Math.max(7, ...riff.notes.flatMap((n) => [n.fret, ...(n.extras?.map((e) => e.fret) ?? [])])) + 1}
           rootPc={riff.notes[0]?.midi % 12}
         />
       </Card>
