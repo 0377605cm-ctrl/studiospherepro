@@ -24,6 +24,32 @@ let guitarSampler: Tone.Sampler | null = null;
 let pianoReady = false;
 let guitarReady = false;
 let unlocked = false;
+let unlockPromise: Promise<void> | null = null;
+
+function setPlaybackAudioSession() {
+  if (typeof navigator === "undefined") return;
+  const nav = navigator as Navigator & {
+    audioSession?: { type?: "auto" | "ambient" | "playback" | "play-and-record" | "transient" };
+    webkitAudioSession?: { type?: "auto" | "ambient" | "playback" | "play-and-record" | "transient" };
+  };
+  try {
+    if (nav.audioSession) nav.audioSession.type = "playback";
+    if (nav.webkitAudioSession) nav.webkitAudioSession.type = "playback";
+  } catch {
+    // ignore unsupported audio session APIs
+  }
+}
+
+function warmupSpeakerOutput(ctx: AudioContext) {
+  const buffer = ctx.createBuffer(1, 1, 22050);
+  const source = ctx.createBufferSource();
+  const gain = ctx.createGain();
+  gain.gain.value = 0.0001;
+  source.buffer = buffer;
+  source.connect(gain).connect(ctx.destination);
+  source.start(0);
+  source.stop(ctx.currentTime + 0.01);
+}
 
 // Per-instrument volume nodes so users can mix piano vs guitar independently.
 let pianoVol: Tone.Volume | null = null;
@@ -111,12 +137,28 @@ function ensureGuitar() {
 /** Must be called from a user gesture before audio can play in most browsers. */
 export async function unlockAudio() {
   if (typeof window === "undefined") return;
-  if (!unlocked) {
-    await Tone.start();
-    unlocked = true;
+  setPlaybackAudioSession();
+  if (!unlockPromise) {
+    unlockPromise = (async () => {
+      await Tone.start();
+      const ctx = Tone.getContext().rawContext as AudioContext;
+      if (ctx.state !== "running") {
+        try {
+          await ctx.resume();
+        } catch {
+          // ignore resume failures; we'll still try the fallback path
+        }
+      }
+      warmupSpeakerOutput(ctx);
+      ensurePiano();
+      ensureGuitar();
+      unlocked = true;
+      emit();
+    })().finally(() => {
+      unlockPromise = null;
+    });
   }
-  ensurePiano();
-  ensureGuitar();
+  await unlockPromise;
 }
 
 function pickInstrument(opts: PlayOptions): Instrument {
@@ -146,11 +188,7 @@ function fallbackBeep(midi: number, opts: PlayOptions, instrument: Instrument) {
   osc.stop(now + duration + release + 0.05);
 }
 
-export function playMidi(midi: number, opts: PlayOptions = {}) {
-  if (typeof window === "undefined") return;
-  // Fire-and-forget unlock — safe to call repeatedly, resolves instantly after first time.
-  void unlockAudio();
-  const instrument = pickInstrument(opts);
+function triggerMidiNow(midi: number, opts: PlayOptions, instrument: Instrument) {
   const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
   const ready = instrument === "piano" ? pianoReady : guitarReady;
   const { duration = 0.6, velocity = 0.8 } = opts;
@@ -166,15 +204,7 @@ export function playMidi(midi: number, opts: PlayOptions = {}) {
   }
 }
 
-export function playFreq(freq: number, opts: PlayOptions = {}) {
-  const midi = Math.round(69 + 12 * Math.log2(freq / 440));
-  playMidi(midi, opts);
-}
-
-export function playChord(midis: number[], opts: PlayOptions = {}) {
-  if (typeof window === "undefined") return;
-  void unlockAudio();
-  const instrument = pickInstrument(opts);
+function triggerChordNow(midis: number[], opts: PlayOptions, instrument: Instrument) {
   const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
   const ready = instrument === "piano" ? pianoReady : guitarReady;
   const { duration = 1, velocity = 0.7 } = opts;
@@ -188,6 +218,45 @@ export function playChord(midis: number[], opts: PlayOptions = {}) {
   } catch {
     midis.forEach((m) => fallbackBeep(m, opts, instrument));
   }
+}
+
+export function prepareMediaElementPlayback(el: HTMLMediaElement | null) {
+  if (!el) return;
+  setPlaybackAudioSession();
+  el.muted = false;
+  el.volume = 1;
+  if ("playsInline" in el) {
+    (el as HTMLMediaElement & { playsInline?: boolean }).playsInline = true;
+  }
+  el.setAttribute("playsinline", "");
+  el.setAttribute("webkit-playsinline", "true");
+}
+
+export function playMidi(midi: number, opts: PlayOptions = {}) {
+  if (typeof window === "undefined") return;
+  const instrument = pickInstrument(opts);
+  if (!unlocked) {
+    void unlockAudio().then(() => triggerMidiNow(midi, opts, instrument));
+    fallbackBeep(midi, opts, instrument);
+    return;
+  }
+  triggerMidiNow(midi, opts, instrument);
+}
+
+export function playFreq(freq: number, opts: PlayOptions = {}) {
+  const midi = Math.round(69 + 12 * Math.log2(freq / 440));
+  playMidi(midi, opts);
+}
+
+export function playChord(midis: number[], opts: PlayOptions = {}) {
+  if (typeof window === "undefined") return;
+  const instrument = pickInstrument(opts);
+  if (!unlocked) {
+    void unlockAudio().then(() => triggerChordNow(midis, opts, instrument));
+    midis.forEach((m) => fallbackBeep(m, opts, instrument));
+    return;
+  }
+  triggerChordNow(midis, opts, instrument);
 }
 
 /** Back-compat shim: returns Tone's underlying AudioContext. */

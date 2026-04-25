@@ -8,6 +8,7 @@ import { Fretboard } from "@/components/Fretboard";
 import { fretboardForScale } from "@/lib/music/theory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GuitarTab } from "@/components/GuitarTab";
+import { prepareMediaElementPlayback, unlockAudio } from "@/lib/audio/synth";
 
 export const Route = createFileRoute("/analyzer")({
   head: () => ({
@@ -80,6 +81,23 @@ function AnalyzerPage() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lowPower = isLowPowerDevice();
+
+  const primeIosPlayback = async () => {
+    const audioEl = audioRef.current;
+    await unlockAudio();
+    if (!audioEl) return;
+    prepareMediaElementPlayback(audioEl);
+    try {
+      audioEl.pause();
+      audioEl.currentTime = 0;
+      const playAttempt = audioEl.play();
+      await playAttempt;
+      audioEl.pause();
+      audioEl.currentTime = 0;
+    } catch {
+      // ignore; this just primes the element while we're inside a user gesture
+    }
+  };
 
   const handleFile = async (file: File) => {
     setErrorMsg("");
@@ -233,7 +251,17 @@ function AnalyzerPage() {
         <>
           {audioUrl && (
             <Card kicker="// Playback">
-              <audio ref={audioRef} src={audioUrl} controls className="w-full" />
+              <div className="space-y-3">
+                <audio ref={audioRef} src={audioUrl} controls className="w-full" playsInline />
+                <button
+                  onClick={() => {
+                    void primeIosPlayback();
+                  }}
+                  className="rounded-md border border-gold/50 bg-gold/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-gold transition-colors hover:bg-gold/20"
+                >
+                  Enable iPad / iPhone speaker audio
+                </button>
+              </div>
             </Card>
           )}
 
@@ -308,7 +336,7 @@ function AnalyzerPage() {
                   bpm={result.bpm.bpm}
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
-                  audioEl={audioRef.current}
+                  audioRef={audioRef}
                 />
               </TabsContent>
             </Tabs>
