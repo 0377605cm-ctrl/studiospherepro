@@ -15,6 +15,8 @@ export interface RiffNote {
   fret: number;
   startBeat: number; // in beats (1 beat = quarter)
   duration: number; // in beats
+  /** Additional simultaneous notes on other strings (double-stops, power chords, strums). */
+  extras?: { midi: number; string: number; fret: number }[];
 }
 
 export interface Riff {
@@ -79,6 +81,99 @@ const GENRE_DEFAULTS: Record<Genre, { bpm: number; preferredString: number; rhyt
 
 /** Genres where chord backing materially helps the riff. */
 const CHORD_BACKED_GENRES: Genre[] = ["blues", "jazz", "rnb"];
+
+/** Probability (0-1) of layering extra strings on a strong-beat note. */
+const VOICING_DENSITY: Record<Genre, number> = {
+  blues: 0.55,
+  rock: 0.4,
+  jazz: 0.5,
+  rnb: 0.45,
+  trap: 0.15,
+  metal: 0.7, // power chords love
+};
+
+/** Try to find a fret on a specific string for a given pitch class, near a target fret. */
+function fretOnString(pc: number, stringIdx: number, nearFret: number): number | null {
+  if (stringIdx < 0 || stringIdx >= STANDARD_TUNING_PCS.length) return null;
+  const open = STANDARD_TUNING_PCS[stringIdx];
+  let best: number | null = null;
+  for (let f = 0; f <= 14; f++) {
+    if ((open + f) % 12 === pc) {
+      if (best === null || Math.abs(f - nearFret) < Math.abs(best - nearFret)) best = f;
+    }
+  }
+  return best;
+}
+
+/** Build extra simultaneous notes for a multi-string voicing on the current chord. */
+function buildExtras(
+  rootNote: { string: number; fret: number; midi: number },
+  chord: ChordBar,
+  genre: Genre,
+): { midi: number; string: number; fret: number }[] {
+  const extras: { midi: number; string: number; fret: number }[] = [];
+  const usedStrings = new Set<number>([rootNote.string]);
+  const rootPc = rootNote.midi % 12;
+  // Determine target chord tones (excluding the note already played).
+  const tones = chord.chordPcs.filter((pc) => pc !== rootPc);
+
+  // Metal / Rock → power chord (root + 5th, optionally octave) on adjacent lower-pitched strings.
+  if (genre === "metal" || genre === "rock") {
+    const fifthPc = (rootPc + 7) % 12;
+    // Add a 5th on the next-thicker string (string idx - 1 in our 0=lowE convention is HIGHER-pitched,
+    // so 'next thicker' is +1; but our 0=lowE so a string with HIGHER index actually... let's check):
+    // STANDARD_TUNING_PCS[0]=lowE, [5]=highE. Adjacent higher-pitched string is +1.
+    const higher = rootNote.string + 1;
+    if (higher < 6 && !usedStrings.has(higher)) {
+      const f = fretOnString(fifthPc, higher, rootNote.fret);
+      if (f !== null && Math.abs(f - rootNote.fret) <= 3) {
+        extras.push({ string: higher, fret: f, midi: STANDARD_TUNING_MIDI[higher] + f });
+        usedStrings.add(higher);
+      }
+    }
+    // Optional octave on +2
+    const higher2 = rootNote.string + 2;
+    if (genre === "metal" && higher2 < 6 && !usedStrings.has(higher2)) {
+      const f = fretOnString(rootPc, higher2, rootNote.fret);
+      if (f !== null && Math.abs(f - rootNote.fret) <= 3) {
+        extras.push({ string: higher2, fret: f, midi: STANDARD_TUNING_MIDI[higher2] + f });
+      }
+    }
+    return extras;
+  }
+
+  // Blues / R&B → double-stop: add a 3rd or 6th above on an adjacent higher string.
+  if (genre === "blues" || genre === "rnb") {
+    const candidates = [(rootPc + 3) % 12, (rootPc + 4) % 12, (rootPc + 9) % 12]; // m3, M3, M6
+    for (const cand of candidates) {
+      if (!chord.chordPcs.includes(cand) && cand !== (rootPc + 9) % 12) continue;
+      const higher = rootNote.string + 1;
+      if (higher >= 6 || usedStrings.has(higher)) break;
+      const f = fretOnString(cand, higher, rootNote.fret);
+      if (f !== null && Math.abs(f - rootNote.fret) <= 3) {
+        extras.push({ string: higher, fret: f, midi: STANDARD_TUNING_MIDI[higher] + f });
+        break;
+      }
+    }
+    return extras;
+  }
+
+  // Jazz → small 3-note chord shell (3rd + 7th) on higher strings.
+  if (genre === "jazz") {
+    for (const pc of tones) {
+      const higher = rootNote.string + extras.length + 1;
+      if (higher >= 6) break;
+      const f = fretOnString(pc, higher, rootNote.fret);
+      if (f !== null && Math.abs(f - rootNote.fret) <= 4) {
+        extras.push({ string: higher, fret: f, midi: STANDARD_TUNING_MIDI[higher] + f });
+        if (extras.length >= 2) break;
+      }
+    }
+    return extras;
+  }
+
+  return extras;
+}
 
 function buildChordVoicing(rootPc: number, chordIntervals: number[], baseMidi = 48): number[] {
   // Root + 3rd + 5th (and 7th if present), spread close-position around baseMidi.
@@ -200,13 +295,23 @@ export function generateRiff(opts: {
     const pos = findPosition(pc, scale.notes, preferredString);
     if (pos) {
       // adjust midi to chosen position
-      notes.push({
+      const noteEntry: RiffNote = {
         midi: STANDARD_TUNING_MIDI[pos.string] + pos.fret,
         string: pos.string,
         fret: pos.fret,
         startBeat: beat,
         duration: dur,
-      });
+      };
+      // Layer extra strings on strong beats based on genre voicing density.
+      if (isStrongBeat && rand() < VOICING_DENSITY[genre]) {
+        const extras = buildExtras(
+          { string: pos.string, fret: pos.fret, midi: noteEntry.midi },
+          chord,
+          genre,
+        );
+        if (extras.length > 0) noteEntry.extras = extras;
+      }
+      notes.push(noteEntry);
     }
     beat += dur;
   }
@@ -257,16 +362,18 @@ export function riffToTab(riff: Riff): string {
   const totalSlots = Math.ceil(riff.bars * riff.beatsPerBar * 4); // sixteenth note resolution
   // Build per-string arrays
   const lines: string[][] = stringChars.map(() => Array(totalSlots).fill("-"));
+  const placeNote = (str: number, fret: number, slot: number) => {
+    const visualString = 5 - str;
+    if (slot < 0 || slot >= totalSlots || !lines[visualString]) return;
+    const fretStr = fret.toString();
+    for (let i = 0; i < fretStr.length; i++) {
+      if (slot + i < totalSlots) lines[visualString][slot + i] = fretStr[i];
+    }
+  };
   for (const n of riff.notes) {
     const slot = Math.round(n.startBeat * 4);
-    const visualString = 5 - n.string; // string 0 (lowE) -> bottom (index 5)
-    if (slot >= 0 && slot < totalSlots && lines[visualString]) {
-      const fret = n.fret.toString();
-      // place each char of fret number, padding adjacent slot if 2 digits
-      for (let i = 0; i < fret.length; i++) {
-        if (slot + i < totalSlots) lines[visualString][slot + i] = fret[i];
-      }
-    }
+    placeNote(n.string, n.fret, slot);
+    if (n.extras) for (const ex of n.extras) placeNote(ex.string, ex.fret, slot);
   }
   // join
   return lines.map((line, i) => `${stringChars[i]}|${line.join("")}|`).join("\n");
