@@ -234,22 +234,13 @@ export function prepareMediaElementPlayback(el: HTMLMediaElement | null) {
 
 export function playMidi(midi: number, opts: PlayOptions = {}) {
   if (typeof window === "undefined") return;
-  // Fire-and-forget unlock — safe to call repeatedly, resolves instantly after first time.
-  void unlockAudio();
   const instrument = pickInstrument(opts);
-  const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
-  const ready = instrument === "piano" ? pianoReady : guitarReady;
-  const { duration = 0.6, velocity = 0.8 } = opts;
-
-  if (!ready) {
+  if (!unlocked) {
+    void unlockAudio().then(() => triggerMidiNow(midi, opts, instrument));
     fallbackBeep(midi, opts, instrument);
     return;
   }
-  try {
-    sampler.triggerAttackRelease(midiToNoteName(midi), duration, undefined, velocity);
-  } catch {
-    fallbackBeep(midi, opts, instrument);
-  }
+  triggerMidiNow(midi, opts, instrument);
 }
 
 export function playFreq(freq: number, opts: PlayOptions = {}) {
@@ -259,21 +250,13 @@ export function playFreq(freq: number, opts: PlayOptions = {}) {
 
 export function playChord(midis: number[], opts: PlayOptions = {}) {
   if (typeof window === "undefined") return;
-  void unlockAudio();
   const instrument = pickInstrument(opts);
-  const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
-  const ready = instrument === "piano" ? pianoReady : guitarReady;
-  const { duration = 1, velocity = 0.7 } = opts;
-
-  if (!ready) {
+  if (!unlocked) {
+    void unlockAudio().then(() => triggerChordNow(midis, opts, instrument));
     midis.forEach((m) => fallbackBeep(m, opts, instrument));
     return;
   }
-  try {
-    sampler.triggerAttackRelease(midis.map(midiToNoteName), duration, undefined, velocity);
-  } catch {
-    midis.forEach((m) => fallbackBeep(m, opts, instrument));
-  }
+  triggerChordNow(midis, opts, instrument);
 }
 
 /** Back-compat shim: returns Tone's underlying AudioContext. */
