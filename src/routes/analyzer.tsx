@@ -308,7 +308,7 @@ function AnalyzerPage() {
                   bpm={result.bpm.bpm}
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
-                  audioEl={audioRef.current}
+                  audioRef={audioRef}
                 />
               </TabsContent>
             </Tabs>
