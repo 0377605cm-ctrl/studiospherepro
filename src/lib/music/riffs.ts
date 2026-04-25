@@ -15,6 +15,8 @@ export interface RiffNote {
   fret: number;
   startBeat: number; // in beats (1 beat = quarter)
   duration: number; // in beats
+  /** Additional simultaneous notes on other strings (double-stops, power chords, strums). */
+  extras?: { midi: number; string: number; fret: number }[];
 }
 
 export interface Riff {
