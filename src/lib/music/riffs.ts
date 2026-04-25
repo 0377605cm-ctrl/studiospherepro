@@ -295,13 +295,23 @@ export function generateRiff(opts: {
     const pos = findPosition(pc, scale.notes, preferredString);
     if (pos) {
       // adjust midi to chosen position
-      notes.push({
+      const noteEntry: RiffNote = {
         midi: STANDARD_TUNING_MIDI[pos.string] + pos.fret,
         string: pos.string,
         fret: pos.fret,
         startBeat: beat,
         duration: dur,
-      });
+      };
+      // Layer extra strings on strong beats based on genre voicing density.
+      if (isStrongBeat && rand() < VOICING_DENSITY[genre]) {
+        const extras = buildExtras(
+          { string: pos.string, fret: pos.fret, midi: noteEntry.midi },
+          chord,
+          genre,
+        );
+        if (extras.length > 0) noteEntry.extras = extras;
+      }
+      notes.push(noteEntry);
     }
     beat += dur;
   }
