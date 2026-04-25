@@ -323,7 +323,16 @@ function RiffPlayer({ riff, bpm, setBpm }: { riff: Riff; bpm: number; setBpm: (n
       riff.notes.forEach((n, idx) => {
         if (!playedSetRef.current.has(idx) && beat >= n.startBeat) {
           playedSetRef.current.add(idx);
-          playMidi(n.midi, { duration: (n.duration * beatMs) / 1000, type: "sawtooth", velocity: 0.55 });
+          const dur = (n.duration * beatMs) / 1000;
+          playMidi(n.midi, { duration: dur, type: "sawtooth", velocity: 0.55 });
+          if (n.extras && n.extras.length > 0) {
+            // Strum: tiny stagger between strings for realism.
+            n.extras.forEach((ex, i) => {
+              setTimeout(() => {
+                playMidi(ex.midi, { duration: dur, type: "sawtooth", velocity: 0.5 });
+              }, 12 * (i + 1));
+            });
+          }
         }
       });
       // play chord on each new bar (if we have backing chords)
