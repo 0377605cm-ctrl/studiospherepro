@@ -1,14 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Card, PageHeader } from "./scales";
 import { analyzeAudioBuffer } from "@/lib/audio/analyzer";
-import { buildScale, noteToPc, NOTE_NAMES_SHARP, type ScaleId } from "@/lib/music/theory";
+import {
+  buildScale,
+  noteToPc,
+  NOTE_NAMES_SHARP,
+  CHORD_FORMULAS,
+  type ScaleId,
+} from "@/lib/music/theory";
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
 import { fretboardForScale } from "@/lib/music/theory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GuitarTab } from "@/components/GuitarTab";
-import { prepareMediaElementPlayback, unlockAudio } from "@/lib/audio/synth";
+import { prepareMediaElementPlayback, unlockAudio, playChord } from "@/lib/audio/synth";
 
 export const Route = createFileRoute("/analyzer")({
   head: () => ({
