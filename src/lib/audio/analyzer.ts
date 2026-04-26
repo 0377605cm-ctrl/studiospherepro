@@ -178,12 +178,23 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
   // Implement a simple Goertzel-like per-frequency for the 12 chroma bins across 5 octaves.
 
   const refMidi = 60; // C4
-  const freqsByPc: number[][] = Array.from({ length: 12 }, () => []);
+  // Each pc holds [freq, weight] pairs. Bass octaves get higher weight
+  // because the root of a key is overwhelmingly carried by the bass line.
+  const freqsByPc: { f: number; w: number }[][] = Array.from({ length: 12 }, () => []);
   for (let pc = 0; pc < 12; pc++) {
     for (let oct = -2; oct <= 3; oct++) {
       const midi = refMidi + pc + oct * 12;
       const f = 440 * Math.pow(2, (midi - 69) / 12);
-      if (f >= 60 && f <= 2000) freqsByPc[pc].push(f);
+      if (f < 55 || f > 2200) continue;
+      // Weight: emphasize 65–260 Hz (bass + low mids), de-emphasize highs
+      // where overtones dominate. octaves: -2=C2, -1=C3, 0=C4, 1=C5...
+      let w = 1;
+      if (oct === -2) w = 1.6;       // bass
+      else if (oct === -1) w = 1.4;  // low mids
+      else if (oct === 0) w = 1.0;
+      else if (oct === 1) w = 0.7;
+      else w = 0.45;
+      freqsByPc[pc].push({ f, w });
     }
   }
 
@@ -211,7 +222,7 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
     const chroma = new Array(12).fill(0);
     for (let pc = 0; pc < 12; pc++) {
       let sum = 0;
-      for (const f of freqsByPc[pc]) sum += goertzel(segment, f, sampleRate);
+      for (const { f, w } of freqsByPc[pc]) sum += w * goertzel(segment, f, sampleRate);
       chroma[pc] = sum;
     }
     const max = Math.max(...chroma) || 1;
