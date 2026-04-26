@@ -88,7 +88,23 @@ export function detectKey(chroma: number[]): { root: string; mode: "major" | "mi
 /** Estimate the most likely chord from a chroma vector. */
 export function detectChord(chroma: number[]): { symbol: string; rootPc: number; type: string; confidence: number } {
   let best = { score: -Infinity, root: 0, type: "maj", symbol: "C" };
-  const candidateTypes: (keyof typeof CHORD_FORMULAS)[] = ["maj", "min", "dom7", "maj7", "min7", "dim", "sus4"];
+  // Only the most common pop/rock chord qualities. Drop dim (rarely correct
+  // and hugely over-fires on partial triads) and sus2 (root+9th confuses).
+  const candidateTypes: (keyof typeof CHORD_FORMULAS)[] = [
+    "maj", "min", "sus4", "dom7", "maj7", "min7",
+  ];
+
+  // Bias factor per type — prefer simple triads unless evidence is strong.
+  // Multipliers below 1 act as a Bayesian-style prior penalty.
+  const PRIOR: Record<string, number> = {
+    maj: 1.00,
+    min: 1.00,
+    sus4: 0.88,
+    dom7: 0.92,
+    maj7: 0.90,
+    min7: 0.92,
+  };
+
   for (let r = 0; r < 12; r++) {
     for (const t of candidateTypes) {
       const formula = CHORD_FORMULAS[t];
@@ -96,7 +112,36 @@ export function detectChord(chroma: number[]): { symbol: string; rootPc: number;
       formula.intervals.forEach((iv) => {
         tmpl[(r + iv) % 12] = 1;
       });
-      const score = cosine(chroma, tmpl);
+
+      // Base shape match
+      let score = cosine(chroma, tmpl);
+
+      // Strong reward for the bass/root being present (the root pitch class
+      // really should have meaningful energy — fixes wrong-root detections).
+      const rootEnergy = chroma[r];
+      score *= 0.55 + 0.45 * rootEnergy;
+
+      // For 7-chords: only credit them if the 7th is *actually* prominent.
+      // Otherwise we bleed major/minor triads into 7ths constantly.
+      if (t === "dom7" || t === "maj7" || t === "min7") {
+        const seventhPc = (r + (t === "maj7" ? 11 : 10)) % 12;
+        const seventhEnergy = chroma[seventhPc];
+        // require the 7th to be at least ~50% as loud as the loudest pc
+        if (seventhEnergy < 0.45) score *= 0.65;
+      }
+      if (t === "sus4") {
+        const fourthPc = (r + 5) % 12;
+        const thirdMaj = (r + 4) % 12;
+        const thirdMin = (r + 3) % 12;
+        // sus4 should only win if 4 is louder than either 3rd
+        if (chroma[fourthPc] < Math.max(chroma[thirdMaj], chroma[thirdMin])) {
+          score *= 0.6;
+        }
+      }
+
+      // Apply prior
+      score *= PRIOR[t] ?? 1;
+
       if (score > best.score) {
         best = { score, root: r, type: t, symbol: NOTE_PCS[r] + formula.suffix };
       }
