@@ -629,17 +629,17 @@ function ChordChart({
               <div className="mt-3 grid gap-1.5">
                 <InstrumentLine
                   label="Piano"
-                  notes={piano.map((m) => PC_NAMES[m % 12])}
+                  notes={piano.map(midiName)}
                   onPlay={() => playIsolated(i, "piano")}
                 />
                 <InstrumentLine
                   label="Guitar"
-                  notes={guitar.map((m) => PC_NAMES[m % 12])}
+                  notes={guitar.map(midiName)}
                   onPlay={() => playIsolated(i, "guitar")}
                 />
                 <InstrumentLine
                   label="Bass"
-                  notes={bass.map((m) => PC_NAMES[m % 12])}
+                  notes={bass.map(midiName)}
                   onPlay={() => playIsolated(i, "bass")}
                 />
               </div>
