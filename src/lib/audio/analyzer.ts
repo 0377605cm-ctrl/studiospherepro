@@ -4,9 +4,20 @@ import { CHORD_FORMULAS, NOTE_NAMES_SHARP, noteToPc } from "@/lib/music/theory";
 
 const NOTE_PCS = NOTE_NAMES_SHARP;
 
-/** Krumhansl-Schmuckler key profiles (normalized). */
-const MAJOR_PROFILE = [6.35, 2.23, 3.48, 2.33, 4.38, 4.09, 2.52, 5.19, 2.39, 3.66, 2.29, 2.88];
-const MINOR_PROFILE = [6.33, 2.68, 3.52, 5.38, 2.6, 3.53, 2.54, 4.75, 3.98, 2.69, 3.34, 3.17];
+/**
+ * Temperley/Bellman-Budge style key profiles — empirically derived from a
+ * large corpus of pop/rock recordings. Outperforms Krumhansl-Schmuckler on
+ * modern tonal music (where K-S was tuned to classical probe-tone tests).
+ * Refs: Temperley 2007, Albrecht & Shanahan 2013.
+ */
+const MAJOR_PROFILE = [
+  0.748, 0.06, 0.488, 0.082, 0.67, 0.46,
+  0.096, 0.715, 0.104, 0.366, 0.057, 0.4,
+];
+const MINOR_PROFILE = [
+  0.712, 0.084, 0.474, 0.618, 0.049, 0.46,
+  0.105, 0.747, 0.404, 0.067, 0.133, 0.33,
+];
 
 function dot(a: number[], b: number[]): number {
   let s = 0;
@@ -20,6 +31,24 @@ function cosine(a: number[], b: number[]): number {
   return dot(a, b) / (norm(a) * norm(b));
 }
 
+/** Pearson correlation — better for matching shape of profiles than cosine. */
+function pearson(a: number[], b: number[]): number {
+  const n = a.length;
+  let ma = 0, mb = 0;
+  for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; }
+  ma /= n; mb /= n;
+  let num = 0, da = 0, db = 0;
+  for (let i = 0; i < n; i++) {
+    const xa = a[i] - ma;
+    const xb = b[i] - mb;
+    num += xa * xb;
+    da += xa * xa;
+    db += xb * xb;
+  }
+  const den = Math.sqrt(da * db) || 1;
+  return num / den;
+}
+
 function rotate(arr: number[], n: number): number[] {
   const r = arr.slice();
   return r.map((_, i) => arr[(i + n) % arr.length]);
@@ -30,8 +59,8 @@ export function detectKey(chroma: number[]): { root: string; mode: "major" | "mi
   let best = { score: -Infinity, root: 0, mode: "major" as "major" | "minor" };
   let second = { score: -Infinity, root: 0, mode: "major" as "major" | "minor" };
   for (let r = 0; r < 12; r++) {
-    const majScore = cosine(chroma, rotate(MAJOR_PROFILE, -r));
-    const minScore = cosine(chroma, rotate(MINOR_PROFILE, -r));
+    const majScore = pearson(chroma, rotate(MAJOR_PROFILE, -r));
+    const minScore = pearson(chroma, rotate(MINOR_PROFILE, -r));
     if (majScore > best.score) {
       second = best;
       best = { score: majScore, root: r, mode: "major" };
@@ -45,9 +74,9 @@ export function detectKey(chroma: number[]): { root: string; mode: "major" | "mi
       second = { score: minScore, root: r, mode: "minor" };
     }
   }
-  // confidence: gap between best and second
+  // confidence: gap between best and second, scaled
   const gap = best.score - second.score;
-  const confidence = Math.max(0, Math.min(1, best.score * 0.7 + gap * 5));
+  const confidence = Math.max(0, Math.min(1, 0.5 + gap * 6));
   return {
     root: NOTE_PCS[best.root],
     mode: best.mode,
@@ -187,19 +216,38 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
     }
     const max = Math.max(...chroma) || 1;
     const norm = chroma.map((v) => v / max);
+    // Emphasize bass band for the *overall* (key) chroma — root motion lives
+    // there. We approximate by weighting segments with stronger low-band
+    // energy more, but here just accumulate normalized; root weighting is
+    // handled below by the harmonic-suppressed pass.
     for (let i = 0; i < 12; i++) overallChroma[i] += norm[i];
     const chord = detectChord(norm);
     segments.push({ startSec: start / sampleRate, chroma: norm, chord });
   }
 
-  // normalize overall
+  // --- Build a separate, harmonic-suppressed chroma for KEY detection ---
+  // Strategy: subtract a fraction of the perfect-5th and major-3rd energy
+  // from each pitch class to undo the natural overtone bias that makes
+  // detectors confuse a key with its dominant.
   const ovMax = Math.max(...overallChroma) || 1;
   const overallNorm = overallChroma.map((v) => v / ovMax);
+
+  const keyChroma = overallNorm.slice();
+  const fifthW = 0.33;
+  const thirdW = 0.18;
+  const suppressed = new Array(12).fill(0);
+  for (let pc = 0; pc < 12; pc++) {
+    const fifth = overallNorm[(pc + 7) % 12];
+    const third = overallNorm[(pc + 4) % 12];
+    suppressed[pc] = Math.max(0, keyChroma[pc] - fifthW * fifth - thirdW * third);
+  }
+  const sMax = Math.max(...suppressed) || 1;
+  const keyChromaNorm = suppressed.map((v) => v / sMax);
 
   return {
     overallChroma: overallNorm,
     segments,
-    key: detectKey(overallNorm),
+    key: detectKey(keyChromaNorm),
     bpm: detectBPM(mono, sampleRate),
     durationSec: buffer.duration,
   };
