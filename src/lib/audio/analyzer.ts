@@ -167,7 +167,23 @@ export function spectrumToChroma(spectrum: Float32Array, sampleRate: number): nu
   return chroma.map((v) => v / max);
 }
 
-/** Detect BPM via simple energy-onset autocorrelation. */
+/**
+ * Detect BPM via onset-strength autocorrelation with **tempo-octave
+ * correction** + a **perceptual prior**.
+ *
+ * Why the rewrite: raw autocorrelation of onset envelopes produces equally
+ * strong peaks at the true tempo *and* at half/double tempo. Without a
+ * preference, the picker often returns the half-time interpretation
+ * (e.g. 75 BPM for a 150 BPM song). Two fixes:
+ *
+ * 1. Score is multiplied by a Parncutt/Moelants-style resonance curve that
+ *    peaks around 120 BPM — humans naturally tap nearer this rate, so
+ *    candidates near it are favored over half/double counterparts.
+ * 2. After scoring all BPM candidates, we explicitly check whether
+ *    doubling the chosen BPM (or halving it) lands inside a sensible band
+ *    AND keeps comparable autocorrelation strength. If so, snap to the
+ *    perceptually preferred multiple.
+ */
 export function detectBPM(audioData: Float32Array, sampleRate: number): { bpm: number; confidence: number } {
   const hopSize = 512;
   const frameSize = 1024;
@@ -175,24 +191,92 @@ export function detectBPM(audioData: Float32Array, sampleRate: number): { bpm: n
   for (let i = 0; i + frameSize < audioData.length; i += hopSize) {
     let e = 0;
     for (let j = 0; j < frameSize; j++) e += audioData[i + j] * audioData[i + j];
-    energies.push(e);
+    // log compression — flattens loud transients vs quiet onsets so kicks
+    // and snares contribute more equally to the onset envelope.
+    energies.push(Math.log1p(e * 1000));
   }
-  // onset detection: positive differences
+  // Spectral-flux-like onset envelope: positive differences only.
   const onsets = energies.map((e, i) => Math.max(0, e - (energies[i - 1] || 0)));
-  // autocorrelate to find period
-  const minBpm = 60, maxBpm = 200;
+
+  // Subtract a moving average to suppress drift from slow loudness changes.
+  const winLen = 8;
+  const detrended = onsets.map((v, i) => {
+    let s = 0, c = 0;
+    for (let k = Math.max(0, i - winLen); k <= Math.min(onsets.length - 1, i + winLen); k++) {
+      s += onsets[k]; c++;
+    }
+    return Math.max(0, v - s / Math.max(1, c));
+  });
+
   const framesPerSec = sampleRate / hopSize;
-  let bestBpm = 120, bestScore = -Infinity;
-  for (let bpm = minBpm; bpm <= maxBpm; bpm++) {
+
+  // Search 50..220 BPM with a perceptual prior weight.
+  // Resonance peak ~120 BPM, gentle falloff.
+  const prior = (bpm: number) => {
+    const x = Math.log2(bpm / 120);
+    return Math.exp(-(x * x) / (2 * 0.45 * 0.45)); // sigma ~0.45 octaves
+  };
+
+  const minBpm = 50, maxBpm = 220;
+  // Cache raw autocorrelation per integer BPM.
+  const rawScores = new Map<number, number>();
+  const acScore = (bpm: number) => {
+    const cached = rawScores.get(bpm);
+    if (cached !== undefined) return cached;
     const lag = Math.round((60 / bpm) * framesPerSec);
-    let score = 0;
-    for (let i = lag; i < onsets.length; i++) score += onsets[i] * onsets[i - lag];
-    if (score > bestScore) {
-      bestScore = score;
+    if (lag < 2 || lag >= detrended.length) {
+      rawScores.set(bpm, 0);
+      return 0;
+    }
+    let s = 0;
+    for (let i = lag; i < detrended.length; i++) s += detrended[i] * detrended[i - lag];
+    rawScores.set(bpm, s);
+    return s;
+  };
+
+  let bestBpm = 120, bestWeighted = -Infinity, bestRaw = 0;
+  for (let bpm = minBpm; bpm <= maxBpm; bpm++) {
+    const raw = acScore(bpm);
+    const weighted = raw * prior(bpm);
+    if (weighted > bestWeighted) {
+      bestWeighted = weighted;
       bestBpm = bpm;
+      bestRaw = raw;
     }
   }
-  return { bpm: bestBpm, confidence: Math.min(1, bestScore / (onsets.length || 1) * 100) };
+
+  // ---- Tempo-octave correction ----
+  // If 2× the chosen BPM is in range and its raw autocorrelation strength
+  // is at least ~85% of the original, prefer the doubled tempo (fixes
+  // the half-time error you saw). Same for 3× (triplet-feel cases) but
+  // with a stricter threshold.
+  const tryMultiple = (mult: number, threshold: number) => {
+    const cand = Math.round(bestBpm * mult);
+    if (cand < minBpm || cand > maxBpm) return;
+    const raw = acScore(cand);
+    if (raw >= threshold * bestRaw) {
+      bestBpm = cand;
+      bestRaw = raw;
+    }
+  };
+  // Order matters: try doubling first (most common error), then check
+  // halving for songs that came out too fast.
+  if (bestBpm < 95) tryMultiple(2, 0.78);
+  if (bestBpm < 70) tryMultiple(3, 0.85);
+  if (bestBpm > 180) tryMultiple(0.5, 0.95);
+
+  // Confidence: ratio of best raw score to mean of nearby BPM scores.
+  let nearbySum = 0, nearbyCount = 0;
+  for (let d = -8; d <= 8; d++) {
+    const b = bestBpm + d;
+    if (b < minBpm || b > maxBpm || d === 0) continue;
+    nearbySum += acScore(b);
+    nearbyCount++;
+  }
+  const ratio = bestRaw / Math.max(1e-9, nearbySum / Math.max(1, nearbyCount));
+  const confidence = Math.max(0, Math.min(1, (ratio - 1) * 0.4));
+
+  return { bpm: bestBpm, confidence };
 }
 
 /** Process an AudioBuffer, returning chroma per segment + overall, plus key + bpm. */
