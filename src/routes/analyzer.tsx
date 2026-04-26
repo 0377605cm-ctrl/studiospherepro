@@ -1,14 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { Card, PageHeader } from "./scales";
 import { analyzeAudioBuffer } from "@/lib/audio/analyzer";
-import { buildScale, noteToPc, NOTE_NAMES_SHARP, type ScaleId } from "@/lib/music/theory";
+import {
+  buildScale,
+  noteToPc,
+  NOTE_NAMES_SHARP,
+  CHORD_FORMULAS,
+  type ScaleId,
+} from "@/lib/music/theory";
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
 import { fretboardForScale } from "@/lib/music/theory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GuitarTab } from "@/components/GuitarTab";
-import { prepareMediaElementPlayback, unlockAudio } from "@/lib/audio/synth";
+import { prepareMediaElementPlayback, unlockAudio, playChord } from "@/lib/audio/synth";
 
 export const Route = createFileRoute("/analyzer")({
   head: () => ({
@@ -304,30 +310,13 @@ function AnalyzerPage() {
               </TabsList>
 
               <TabsContent value="chords">
-                <div className="grid grid-cols-3 gap-2 sm:grid-cols-6 lg:grid-cols-8">
-                  {result.segments.map((seg, i) => (
-                    <div
-                      key={i}
-                      className="rounded-md border border-border bg-secondary/40 p-2 text-center"
-                      onClick={() => {
-                        if (audioRef.current) {
-                          audioRef.current.currentTime = seg.startSec;
-                          audioRef.current.play();
-                        }
-                      }}
-                      style={{ cursor: "pointer" }}
-                    >
-                      <div className="font-mono text-[9px] text-muted-foreground">
-                        {Math.floor(seg.startSec / 60)}:{(seg.startSec % 60).toFixed(0).padStart(2, "0")}
-                      </div>
-                      <div className="text-base font-semibold">{seg.chord.symbol}</div>
-                      <div className="mt-1 h-1 overflow-hidden rounded bg-background">
-                        <div className="h-full bg-gold/60" style={{ width: `${seg.chord.confidence * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs font-mono text-muted-foreground">Click a chord to seek the audio.</p>
+                <ChordChart
+                  segments={result.segments.map((s) => ({
+                    startSec: s.startSec,
+                    chord: s.chord,
+                  }))}
+                  audioRef={audioRef}
+                />
               </TabsContent>
 
               <TabsContent value="tab">
@@ -425,5 +414,231 @@ function SuggestedScales({ root, mode }: { root: string; mode: "major" | "minor"
         />
       </div>
     </Card>
+  );
+}
+
+/* ============================================================
+ * ChordChart — multi-instrument chord sheet with isolated playback
+ * ========================================================== */
+
+type ChordSeg = {
+  startSec: number;
+  chord: { symbol: string; rootPc: number; type: string; confidence: number };
+};
+
+const PC_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+/** Build a piano voicing (root-position triad/7th around middle C). */
+function pianoVoicing(rootPc: number, type: string): number[] {
+  const formula = CHORD_FORMULAS[type as keyof typeof CHORD_FORMULAS] ?? CHORD_FORMULAS.maj;
+  const baseMidi = 60 + rootPc; // root in/near octave 4
+  return formula.intervals.map((iv) => baseMidi + iv);
+}
+
+/** Build a guitar voicing — root on low E/A area, then stacked triad/7th tones above. */
+function guitarVoicing(rootPc: number, type: string): number[] {
+  const formula = CHORD_FORMULAS[type as keyof typeof CHORD_FORMULAS] ?? CHORD_FORMULAS.maj;
+  // Place root between E2 (40) and E3 (52) so it sits naturally on E or A string.
+  let rootMidi = 40 + rootPc;
+  if (rootMidi < 40) rootMidi += 12;
+  if (rootMidi > 51) rootMidi -= 12;
+  return formula.intervals.map((iv) => rootMidi + iv);
+}
+
+/** Build a simple bass line — single root note, one octave below the guitar root. */
+function bassVoicing(rootPc: number): number[] {
+  let m = 28 + rootPc; // E1..D#2 range
+  if (m < 28) m += 12;
+  return [m];
+}
+
+function fmtTime(sec: number) {
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, "0")}`;
+}
+
+function ChordChart({
+  segments,
+  audioRef,
+}: {
+  segments: ChordSeg[];
+  audioRef: React.RefObject<HTMLAudioElement | null>;
+}) {
+  const [activeIdx, setActiveIdx] = useState<number | null>(null);
+  const [snippetIdx, setSnippetIdx] = useState<number | null>(null);
+  const snippetTimerRef = useRef<number | null>(null);
+
+  // Cleanup any pending snippet timer on unmount.
+  useEffect(() => {
+    return () => {
+      if (snippetTimerRef.current !== null) {
+        window.clearTimeout(snippetTimerRef.current);
+      }
+    };
+  }, []);
+
+  /** Duration of a segment, capped so isolated playback doesn't drone on. */
+  const segDuration = (i: number, max = 2.5) => {
+    const next = segments[i + 1];
+    const raw = next ? next.startSec - segments[i].startSec : max;
+    return Math.max(0.4, Math.min(max, raw));
+  };
+
+  const playIsolated = (i: number, instrument: "piano" | "guitar" | "bass") => {
+    const seg = segments[i];
+    const dur = segDuration(i, instrument === "bass" ? 2.0 : 2.5);
+    const midis =
+      instrument === "piano"
+        ? pianoVoicing(seg.chord.rootPc, seg.chord.type)
+        : instrument === "guitar"
+          ? guitarVoicing(seg.chord.rootPc, seg.chord.type)
+          : bassVoicing(seg.chord.rootPc);
+    // type "triangle" → piano sampler, anything else → guitar sampler in synth.ts
+    const synthType: OscillatorType = instrument === "piano" ? "triangle" : "sawtooth";
+    setActiveIdx(i);
+    playChord(midis, { duration: dur, velocity: instrument === "bass" ? 0.9 : 0.7, type: synthType });
+    window.setTimeout(() => {
+      setActiveIdx((cur) => (cur === i ? null : cur));
+    }, dur * 1000);
+  };
+
+  /** Play just this segment of the original audio, then auto-pause at segment end. */
+  const playSnippet = (i: number) => {
+    const el = audioRef.current;
+    if (!el) return;
+    const seg = segments[i];
+    const next = segments[i + 1];
+    const endSec = next ? next.startSec : seg.startSec + 3;
+    const dur = Math.max(0.3, endSec - seg.startSec);
+
+    if (snippetTimerRef.current !== null) {
+      window.clearTimeout(snippetTimerRef.current);
+      snippetTimerRef.current = null;
+    }
+    el.currentTime = seg.startSec;
+    void el.play().catch(() => undefined);
+    setSnippetIdx(i);
+    snippetTimerRef.current = window.setTimeout(() => {
+      el.pause();
+      setSnippetIdx((cur) => (cur === i ? null : cur));
+      snippetTimerRef.current = null;
+    }, dur * 1000);
+  };
+
+  const stopSnippet = () => {
+    const el = audioRef.current;
+    if (snippetTimerRef.current !== null) {
+      window.clearTimeout(snippetTimerRef.current);
+      snippetTimerRef.current = null;
+    }
+    if (el) el.pause();
+    setSnippetIdx(null);
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] font-mono text-muted-foreground">
+        <span>Tap an instrument row to hear that chord in isolation — playback auto-stops so you can play along.</span>
+      </div>
+      <div className="space-y-2">
+        {segments.map((seg, i) => {
+          const piano = pianoVoicing(seg.chord.rootPc, seg.chord.type);
+          const guitar = guitarVoicing(seg.chord.rootPc, seg.chord.type);
+          const bass = bassVoicing(seg.chord.rootPc);
+          const isActive = activeIdx === i;
+          const isSnippet = snippetIdx === i;
+          return (
+            <div
+              key={i}
+              className={`rounded-lg border bg-secondary/30 p-3 transition-colors ${
+                isActive || isSnippet ? "border-gold/70 bg-gold/5" : "border-border"
+              }`}
+            >
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex min-w-[68px] flex-col">
+                  <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    {fmtTime(seg.startSec)}
+                  </div>
+                  <div className="text-2xl font-bold tracking-tight text-gold">{seg.chord.symbol}</div>
+                </div>
+                <div className="h-1 flex-1 min-w-[60px] overflow-hidden rounded bg-background">
+                  <div className="h-full bg-gold/60" style={{ width: `${seg.chord.confidence * 100}%` }} />
+                </div>
+                <div className="flex gap-1">
+                  <button
+                    onClick={() => playSnippet(i)}
+                    className="rounded border border-border bg-background/60 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:border-gold/60 hover:text-gold"
+                  >
+                    ▶ Snippet
+                  </button>
+                  {isSnippet && (
+                    <button
+                      onClick={stopSnippet}
+                      className="rounded border border-rose-400/40 bg-rose-400/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-rose-200 hover:bg-rose-400/20"
+                    >
+                      ■ Stop
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Per-instrument lines */}
+              <div className="mt-3 grid gap-1.5">
+                <InstrumentLine
+                  label="Piano"
+                  notes={piano.map((m) => PC_NAMES[m % 12])}
+                  onPlay={() => playIsolated(i, "piano")}
+                />
+                <InstrumentLine
+                  label="Guitar"
+                  notes={guitar.map((m) => PC_NAMES[m % 12])}
+                  onPlay={() => playIsolated(i, "guitar")}
+                />
+                <InstrumentLine
+                  label="Bass"
+                  notes={bass.map((m) => PC_NAMES[m % 12])}
+                  onPlay={() => playIsolated(i, "bass")}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function InstrumentLine({
+  label,
+  notes,
+  onPlay,
+}: {
+  label: string;
+  notes: string[];
+  onPlay: () => void;
+}) {
+  return (
+    <button
+      onClick={onPlay}
+      className="group flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2 py-1.5 text-left transition-colors hover:border-gold/60 hover:bg-gold/5"
+    >
+      <span className="w-14 font-mono text-[10px] uppercase tracking-widest text-muted-foreground group-hover:text-gold">
+        {label}
+      </span>
+      <span className="flex flex-1 flex-wrap gap-1">
+        {notes.map((n, i) => (
+          <span
+            key={i}
+            className="rounded border border-border bg-secondary/40 px-1.5 py-0.5 font-mono text-[10px] text-foreground"
+          >
+            {n}
+          </span>
+        ))}
+      </span>
+      <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground group-hover:text-gold">
+        ▶
+      </span>
+    </button>
   );
 }
