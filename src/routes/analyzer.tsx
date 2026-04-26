@@ -428,28 +428,70 @@ type ChordSeg = {
 
 const PC_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
-/** Build a piano voicing (root-position triad/7th around middle C). */
+/** Pick a MIDI note for `pc` whose value is closest to `target`. */
+function nearestPc(pc: number, target: number): number {
+  const base = pc + 12 * Math.round((target - pc) / 12);
+  return base;
+}
+
+/**
+ * Piano LH+RH voicing: bass root in octave 2, triad/7th-chord tones voiced
+ * close to middle C (C4 area) using nearest-pitch placement so each chord
+ * voice-leads smoothly instead of jumping octaves with the root.
+ */
 function pianoVoicing(rootPc: number, type: string): number[] {
   const formula = CHORD_FORMULAS[type as keyof typeof CHORD_FORMULAS] ?? CHORD_FORMULAS.maj;
-  const baseMidi = 60 + rootPc; // root in/near octave 4
-  return formula.intervals.map((iv) => baseMidi + iv);
+  const bass = nearestPc(rootPc, 36); // C2 area (E2..B2)
+  // Place upper voices around C4 (60), each note picked nearest to a target
+  // so the voicing sits in a natural keyboard register regardless of root.
+  const targets = [60, 64, 67, 70]; // ~C4, E4, G4, Bb4
+  const upper = formula.intervals.map((iv, i) => {
+    const pc = (rootPc + iv) % 12;
+    return nearestPc(pc, targets[i] ?? 67);
+  });
+  return [bass, ...upper];
 }
 
-/** Build a guitar voicing — root on low E/A area, then stacked triad/7th tones above. */
+/**
+ * Guitar voicing — approximates a standard barre/open shape.
+ * Roots C..F sit on the A-string (MIDI 45..53), F#..B sit on the low-E
+ * string (MIDI 38..47). Then chord tones are laid out above the root in a
+ * natural 4–5-string spread instead of a tight stack.
+ */
 function guitarVoicing(rootPc: number, type: string): number[] {
   const formula = CHORD_FORMULAS[type as keyof typeof CHORD_FORMULAS] ?? CHORD_FORMULAS.maj;
-  // Place root between E2 (40) and E3 (52) so it sits naturally on E or A string.
-  let rootMidi = 40 + rootPc;
-  if (rootMidi < 40) rootMidi += 12;
-  if (rootMidi > 51) rootMidi -= 12;
-  return formula.intervals.map((iv) => rootMidi + iv);
+  // Root: prefer low-E (40) or A-string (45) — pick whichever stays below G3
+  let root = 40 + rootPc;          // E-string root
+  if (root > 47) root -= 12;       // ...wrap so we don't go above B3 on E string
+  if (root < 40) root += 12;
+
+  // Full guitar voicing: root + 5 + octave-root + 3 (or 7) + 5 + octave-3
+  // Build by picking pitch classes from the chord and stretching them across
+  // ~2.5 octaves like a real strummed shape.
+  const chordPcs = formula.intervals.map((iv) => (rootPc + iv) % 12);
+  // Targets: low root, fifth above, octave root, third, fifth, top voice
+  const targetMidis = [root, root + 7, root + 12, root + 16, root + 19, root + 24];
+  const out: number[] = [];
+  targetMidis.forEach((t, i) => {
+    // Cycle through chord tones; root, 5, root, 3, 5, octave-3...
+    const pc = chordPcs[i % chordPcs.length];
+    out.push(nearestPc(pc, t));
+  });
+  // De-dup adjacent equal notes (compact)
+  return out.filter((m, i, a) => i === 0 || m !== a[i - 1]);
 }
 
-/** Build a simple bass line — single root note, one octave below the guitar root. */
+/** Bass: single root in E1–G2 range. */
 function bassVoicing(rootPc: number): number[] {
-  let m = 28 + rootPc; // E1..D#2 range
-  if (m < 28) m += 12;
-  return [m];
+  // Target G1 (31) so all roots land in real bass guitar register
+  return [nearestPc(rootPc, 31)];
+}
+
+/** Convert MIDI to display name like "C4", "F#3". */
+function midiName(m: number): string {
+  const pc = ((m % 12) + 12) % 12;
+  const oct = Math.floor(m / 12) - 1;
+  return `${PC_NAMES[pc]}${oct}`;
 }
 
 function fmtTime(sec: number) {
