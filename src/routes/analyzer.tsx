@@ -7,11 +7,14 @@ import {
   noteToPc,
   NOTE_NAMES_SHARP,
   CHORD_FORMULAS,
+  SCALES,
+  TUNINGS,
+  tuningPcs as tuningPcsFor,
   type ScaleId,
+  type TuningId,
 } from "@/lib/music/theory";
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
-import { fretboardForScale } from "@/lib/music/theory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GuitarTab } from "@/components/GuitarTab";
 import { prepareMediaElementPlayback, unlockAudio, playChord } from "@/lib/audio/synth";
@@ -83,9 +86,13 @@ function AnalyzerPage() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [keyOverride, setKeyOverride] = useState<{ root: string; mode: "major" | "minor" } | null>(null);
+  const [bpmOverride, setBpmOverride] = useState<number | null>(null);
+  const [tuningId, setTuningId] = useState<TuningId>("standard");
+  const [activeScale, setActiveScale] = useState<ScaleId | null>(null);
   const [progressNote, setProgressNote] = useState<string>("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scalesRef = useRef<HTMLDivElement | null>(null);
   const lowPower = isLowPowerDevice();
 
   const primeIosPlayback = async () => {
@@ -186,6 +193,11 @@ function AnalyzerPage() {
 
   const finalKey = keyOverride ?? (result ? { root: result.key.root, mode: result.key.mode } : null);
   const confidenceTier = result ? (result.key.confidence > 0.6 ? "high" : result.key.confidence > 0.35 ? "medium" : "low") : null;
+  const finalBpm = bpmOverride ?? (result ? result.bpm.bpm : 0);
+
+  const scrollToScales = () => {
+    scalesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
@@ -255,6 +267,66 @@ function AnalyzerPage() {
 
       {result && finalKey && (
         <>
+          <Card kicker="// Manual overrides">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Key</div>
+                <KeyOverridePicker current={finalKey} onChange={setKeyOverride} />
+              </div>
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Tempo · {finalBpm} BPM
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={40}
+                    max={240}
+                    value={finalBpm}
+                    onChange={(e) => setBpmOverride(Number(e.target.value))}
+                    className="flex-1 accent-[oklch(0.78_0.13_85)]"
+                  />
+                  <input
+                    type="number"
+                    min={40}
+                    max={240}
+                    value={finalBpm}
+                    onChange={(e) => setBpmOverride(Number(e.target.value))}
+                    className="w-16 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
+                  />
+                  {bpmOverride !== null && (
+                    <button
+                      onClick={() => setBpmOverride(null)}
+                      className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:text-gold"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Tuning</div>
+                <select
+                  value={tuningId}
+                  onChange={(e) => setTuningId(e.target.value as TuningId)}
+                  className="w-full rounded-md border border-border bg-background px-2 py-2 font-mono text-sm"
+                >
+                  {(Object.keys(TUNINGS) as TuningId[]).map((id) => (
+                    <option key={id} value={id}>{TUNINGS[id].name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={scrollToScales}
+                className="rounded-md border border-gold/50 bg-gold/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-gold transition-colors hover:bg-gold/20"
+              >
+                ↓ Skip to suggested scales
+              </button>
+            </div>
+          </Card>
+
           {audioUrl && (
             <Card kicker="// Playback">
               <div className="space-y-3">
@@ -280,15 +352,19 @@ function AnalyzerPage() {
             />
             <DetectionCard
               label="Tempo"
-              value={`${result.bpm.bpm} BPM`}
+              value={`${finalBpm} BPM`}
               confidence={result.bpm.confidence}
-              hint={`${result.durationSec.toFixed(1)}s · ${result.segments.length} segments`}
+              hint={
+                bpmOverride !== null
+                  ? `Manual override (detected ${result.bpm.bpm})`
+                  : `${result.durationSec.toFixed(1)}s · ${result.segments.length} segments`
+              }
             />
             <DetectionCard
               label="Tuning"
-              value="Standard"
-              confidence={0.7}
-              hint="Auto-detect (manual override coming)"
+              value={TUNINGS[tuningId].labels.join(" ").toUpperCase()}
+              confidence={1}
+              hint={TUNINGS[tuningId].name}
             />
           </div>
 
@@ -296,9 +372,8 @@ function AnalyzerPage() {
           {confidenceTier === "low" && (
             <Card kicker="// Low confidence — chord sheet mode">
               <p className="text-sm text-muted-foreground mb-3">
-                Detection confidence is low. Showing chord sheet instead of TAB. Try the manual key picker below.
+                Detection confidence is low. Showing chord sheet instead of TAB. Use the manual overrides above.
               </p>
-              <KeyOverridePicker current={finalKey} onChange={setKeyOverride} />
             </Card>
           )}
 
@@ -322,7 +397,7 @@ function AnalyzerPage() {
               <TabsContent value="tab">
                 <GuitarTab
                   segments={result.segments.map((s) => ({ startSec: s.startSec, chord: s.chord }))}
-                  bpm={result.bpm.bpm}
+                  bpm={finalBpm}
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
                   audioRef={audioRef}
@@ -331,7 +406,15 @@ function AnalyzerPage() {
             </Tabs>
           </Card>
 
-          <SuggestedScales root={finalKey.root} mode={finalKey.mode} />
+          <div ref={scalesRef}>
+            <SuggestedScales
+              root={finalKey.root}
+              mode={finalKey.mode}
+              tuningId={tuningId}
+              activeScale={activeScale}
+              onSelectScale={setActiveScale}
+            />
+          </div>
         </>
       )}
 
@@ -390,27 +473,71 @@ function KeyOverridePicker({ current, onChange }: { current: { root: string; mod
   );
 }
 
-function SuggestedScales({ root, mode }: { root: string; mode: "major" | "minor" }) {
-  const baseScale: ScaleId = mode === "minor" ? "pentatonic_minor" : "pentatonic_major";
-  const scale = buildScale(root, baseScale);
-  const positions = fretboardForScale(scale, 15);
+function SuggestedScales({
+  root,
+  mode,
+  tuningId,
+  activeScale,
+  onSelectScale,
+}: {
+  root: string;
+  mode: "major" | "minor";
+  tuningId: TuningId;
+  activeScale: ScaleId | null;
+  onSelectScale: (s: ScaleId) => void;
+}) {
+  const suggestions: ScaleId[] = mode === "minor"
+    ? ["pentatonic_minor", "blues", "minor", "dorian", "harmonic_minor"]
+    : ["pentatonic_major", "major", "mixolydian", "lydian", "blues"];
+
+  // Default to first suggestion if nothing picked, or if current pick isn't in this list.
+  const selected: ScaleId = activeScale && suggestions.includes(activeScale) ? activeScale : suggestions[0];
+  const scale = buildScale(root, selected);
+  const tuning = TUNINGS[tuningId];
+  const tPcs = tuningPcsFor(tuningId);
+  const positions: { string: number; fret: number; pc: number; isRoot: boolean }[] = [];
+  for (let s = 0; s < tPcs.length; s++) {
+    for (let f = 0; f <= 15; f++) {
+      const pc = (tPcs[s] + f) % 12;
+      if (scale.notes.includes(pc)) {
+        positions.push({ string: s, fret: f, pc, isRoot: pc === scale.rootPc });
+      }
+    }
+  }
 
   return (
     <Card kicker="// Suggested scales for solos">
+      <p className="mb-3 text-[11px] font-mono text-muted-foreground">
+        Tap a scale to load it on the keyboard and fretboard ({tuning.name}).
+      </p>
       <div className="mb-4 flex flex-wrap gap-2">
-        {[baseScale, mode === "minor" ? "blues" : "major", mode === "minor" ? "minor" : "mixolydian"].map((id, i) => (
-          <span key={i} className="rounded-md border border-gold/40 bg-gold/10 px-3 py-1 font-mono text-xs text-gold">
-            {root} {id.replace("_", " ")}
-          </span>
-        ))}
+        {suggestions.map((id) => {
+          const isActive = id === selected;
+          return (
+            <button
+              key={id}
+              onClick={() => onSelectScale(id)}
+              className={`rounded-md border px-3 py-1.5 font-mono text-xs transition-colors ${
+                isActive
+                  ? "border-gold bg-gold text-gold-foreground"
+                  : "border-gold/40 bg-gold/10 text-gold hover:bg-gold/20"
+              }`}
+            >
+              {root} {SCALES[id].name}
+            </button>
+          );
+        })}
       </div>
       <PianoKeyboard highlights={scale.notes} rootPc={noteToPc(root)} startMidi={48} octaves={2} />
       <div className="mt-4">
         <Fretboard
-          positions={positions.map((p) => ({ ...p, isRoot: p.isRoot }))}
+          positions={positions}
           rootPc={scale.rootPc}
           startFret={0}
           endFret={12}
+          tuningPcs={tPcs}
+          tuningMidi={tuning.midi}
+          stringLabels={tuning.labels}
         />
       </div>
     </Card>

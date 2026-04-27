@@ -164,6 +164,24 @@ export const PROGRESSIONS: Record<Genre, { name: string; degrees: number[]; mino
 export const STANDARD_TUNING_PCS = [4, 9, 2, 7, 11, 4]; // pitch classes
 export const STANDARD_TUNING_MIDI = [40, 45, 50, 55, 59, 64];
 
+/** Common alternate tunings (low → high). */
+export const TUNINGS: Record<string, { name: string; midi: number[]; labels: string[] }> = {
+  standard: { name: "Standard (E A D G B E)", midi: [40, 45, 50, 55, 59, 64], labels: ["E", "A", "D", "G", "B", "e"] },
+  drop_d: { name: "Drop D (D A D G B E)", midi: [38, 45, 50, 55, 59, 64], labels: ["D", "A", "D", "G", "B", "e"] },
+  half_step_down: { name: "Half-step down (Eb)", midi: [39, 44, 49, 54, 58, 63], labels: ["Eb", "Ab", "Db", "Gb", "Bb", "eb"] },
+  whole_step_down: { name: "Whole-step down (D)", midi: [38, 43, 48, 53, 57, 62], labels: ["D", "G", "C", "F", "A", "d"] },
+  drop_c: { name: "Drop C (C G C F A D)", midi: [36, 43, 48, 53, 57, 62], labels: ["C", "G", "C", "F", "A", "d"] },
+  open_g: { name: "Open G (D G D G B D)", midi: [38, 43, 50, 55, 59, 62], labels: ["D", "G", "D", "G", "B", "d"] },
+  open_d: { name: "Open D (D A D F# A D)", midi: [38, 45, 50, 54, 57, 62], labels: ["D", "A", "D", "F#", "A", "d"] },
+  dadgad: { name: "DADGAD", midi: [38, 45, 50, 55, 57, 62], labels: ["D", "A", "D", "G", "A", "d"] },
+};
+
+export type TuningId = keyof typeof TUNINGS;
+
+export function tuningPcs(id: TuningId): number[] {
+  return TUNINGS[id].midi.map((m) => ((m % 12) + 12) % 12);
+}
+
 /** Map a scale onto fretboard positions (0..maxFret) for each string. */
 export function fretboardForScale(scale: ScaleInstance, maxFret = 15, tuning = STANDARD_TUNING_PCS) {
   const positions: { string: number; fret: number; pc: number; isRoot: boolean }[] = [];
