@@ -15,7 +15,6 @@ import {
 } from "@/lib/music/theory";
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
-import { fretboardForScale } from "@/lib/music/theory";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { GuitarTab } from "@/components/GuitarTab";
 import { prepareMediaElementPlayback, unlockAudio, playChord } from "@/lib/audio/synth";
