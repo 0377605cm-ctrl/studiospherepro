@@ -18,9 +18,12 @@ interface Props {
   rootPc?: number;
   scalePcs?: number[];
   height?: number;
+  tuningPcs?: number[];
+  tuningMidi?: number[];
+  stringLabels?: string[];
 }
 
-const STRING_LABELS = ["E", "A", "D", "G", "B", "e"]; // low to high
+const DEFAULT_STRING_LABELS = ["E", "A", "D", "G", "B", "e"]; // low to high
 const FRET_MARKERS = [3, 5, 7, 9, 15, 17, 19, 21];
 const DOUBLE_MARKERS = [12, 24];
 
@@ -31,6 +34,9 @@ export function Fretboard({
   rootPc,
   scalePcs,
   height = 200,
+  tuningPcs = STANDARD_TUNING_PCS,
+  tuningMidi = STANDARD_TUNING_MIDI,
+  stringLabels = DEFAULT_STRING_LABELS,
 }: Props) {
   const fretCount = endFret - startFret + 1;
   const numStrings = 6;
@@ -99,7 +105,7 @@ export function Fretboard({
                   className="absolute -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
                   style={{ top: y, left: 0, width: 24, textAlign: "right" }}
                 >
-                  {STRING_LABELS[stringIdx]}
+                  {stringLabels[stringIdx]}
                 </div>
               </div>
             );
@@ -123,13 +129,13 @@ export function Fretboard({
             return Array.from({ length: fretCount }).map((_, fIdx) => {
               const fret = startFret + fIdx;
               const found = posMap.get(`${stringIdx}:${fret}`);
-              const pc = (STANDARD_TUNING_PCS[stringIdx] + fret) % 12;
+              const pc = (tuningPcs[stringIdx] + fret) % 12;
               const inScale = scalePcs?.includes(pc);
               if (!found && !inScale) return null;
               const isRoot = found?.isRoot ?? pc === rootPc;
               const label = found?.label ?? NOTE_NAMES_SHARP[pc];
               const handleClick = () => {
-                const midi = STANDARD_TUNING_MIDI[stringIdx] + fret;
+                const midi = tuningMidi[stringIdx] + fret;
                 playMidi(midi, { duration: 0.5, type: "sawtooth" });
               };
               const size = found ? 22 : 16;
