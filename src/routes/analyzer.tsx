@@ -7,7 +7,11 @@ import {
   noteToPc,
   NOTE_NAMES_SHARP,
   CHORD_FORMULAS,
+  SCALES,
+  TUNINGS,
+  tuningPcs as tuningPcsFor,
   type ScaleId,
+  type TuningId,
 } from "@/lib/music/theory";
 import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
@@ -83,9 +87,13 @@ function AnalyzerPage() {
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string>("");
   const [keyOverride, setKeyOverride] = useState<{ root: string; mode: "major" | "minor" } | null>(null);
+  const [bpmOverride, setBpmOverride] = useState<number | null>(null);
+  const [tuningId, setTuningId] = useState<TuningId>("standard");
+  const [activeScale, setActiveScale] = useState<ScaleId | null>(null);
   const [progressNote, setProgressNote] = useState<string>("");
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const scalesRef = useRef<HTMLDivElement | null>(null);
   const lowPower = isLowPowerDevice();
 
   const primeIosPlayback = async () => {
@@ -186,6 +194,11 @@ function AnalyzerPage() {
 
   const finalKey = keyOverride ?? (result ? { root: result.key.root, mode: result.key.mode } : null);
   const confidenceTier = result ? (result.key.confidence > 0.6 ? "high" : result.key.confidence > 0.35 ? "medium" : "low") : null;
+  const finalBpm = bpmOverride ?? (result ? result.bpm.bpm : 0);
+
+  const scrollToScales = () => {
+    scalesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
@@ -255,6 +268,66 @@ function AnalyzerPage() {
 
       {result && finalKey && (
         <>
+          <Card kicker="// Manual overrides">
+            <div className="grid gap-4 md:grid-cols-3">
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Key</div>
+                <KeyOverridePicker current={finalKey} onChange={setKeyOverride} />
+              </div>
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                  Tempo · {finalBpm} BPM
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="range"
+                    min={40}
+                    max={240}
+                    value={finalBpm}
+                    onChange={(e) => setBpmOverride(Number(e.target.value))}
+                    className="flex-1 accent-[oklch(0.78_0.13_85)]"
+                  />
+                  <input
+                    type="number"
+                    min={40}
+                    max={240}
+                    value={finalBpm}
+                    onChange={(e) => setBpmOverride(Number(e.target.value))}
+                    className="w-16 rounded-md border border-border bg-background px-2 py-1 font-mono text-sm"
+                  />
+                  {bpmOverride !== null && (
+                    <button
+                      onClick={() => setBpmOverride(null)}
+                      className="rounded border border-border px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground hover:text-gold"
+                    >
+                      Reset
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">Tuning</div>
+                <select
+                  value={tuningId}
+                  onChange={(e) => setTuningId(e.target.value as TuningId)}
+                  className="w-full rounded-md border border-border bg-background px-2 py-2 font-mono text-sm"
+                >
+                  {(Object.keys(TUNINGS) as TuningId[]).map((id) => (
+                    <option key={id} value={id}>{TUNINGS[id].name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="mt-3 flex justify-end">
+              <button
+                onClick={scrollToScales}
+                className="rounded-md border border-gold/50 bg-gold/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-gold transition-colors hover:bg-gold/20"
+              >
+                ↓ Skip to suggested scales
+              </button>
+            </div>
+          </Card>
+
           {audioUrl && (
             <Card kicker="// Playback">
               <div className="space-y-3">
@@ -280,15 +353,19 @@ function AnalyzerPage() {
             />
             <DetectionCard
               label="Tempo"
-              value={`${result.bpm.bpm} BPM`}
+              value={`${finalBpm} BPM`}
               confidence={result.bpm.confidence}
-              hint={`${result.durationSec.toFixed(1)}s · ${result.segments.length} segments`}
+              hint={
+                bpmOverride !== null
+                  ? `Manual override (detected ${result.bpm.bpm})`
+                  : `${result.durationSec.toFixed(1)}s · ${result.segments.length} segments`
+              }
             />
             <DetectionCard
               label="Tuning"
-              value="Standard"
-              confidence={0.7}
-              hint="Auto-detect (manual override coming)"
+              value={TUNINGS[tuningId].labels.join(" ").toUpperCase()}
+              confidence={1}
+              hint={TUNINGS[tuningId].name}
             />
           </div>
 
@@ -296,9 +373,8 @@ function AnalyzerPage() {
           {confidenceTier === "low" && (
             <Card kicker="// Low confidence — chord sheet mode">
               <p className="text-sm text-muted-foreground mb-3">
-                Detection confidence is low. Showing chord sheet instead of TAB. Try the manual key picker below.
+                Detection confidence is low. Showing chord sheet instead of TAB. Use the manual overrides above.
               </p>
-              <KeyOverridePicker current={finalKey} onChange={setKeyOverride} />
             </Card>
           )}
 
@@ -322,7 +398,7 @@ function AnalyzerPage() {
               <TabsContent value="tab">
                 <GuitarTab
                   segments={result.segments.map((s) => ({ startSec: s.startSec, chord: s.chord }))}
-                  bpm={result.bpm.bpm}
+                  bpm={finalBpm}
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
                   audioRef={audioRef}
@@ -331,7 +407,15 @@ function AnalyzerPage() {
             </Tabs>
           </Card>
 
-          <SuggestedScales root={finalKey.root} mode={finalKey.mode} />
+          <div ref={scalesRef}>
+            <SuggestedScales
+              root={finalKey.root}
+              mode={finalKey.mode}
+              tuningId={tuningId}
+              activeScale={activeScale}
+              onSelectScale={setActiveScale}
+            />
+          </div>
         </>
       )}
 
