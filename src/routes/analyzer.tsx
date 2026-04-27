@@ -474,27 +474,71 @@ function KeyOverridePicker({ current, onChange }: { current: { root: string; mod
   );
 }
 
-function SuggestedScales({ root, mode }: { root: string; mode: "major" | "minor" }) {
-  const baseScale: ScaleId = mode === "minor" ? "pentatonic_minor" : "pentatonic_major";
-  const scale = buildScale(root, baseScale);
-  const positions = fretboardForScale(scale, 15);
+function SuggestedScales({
+  root,
+  mode,
+  tuningId,
+  activeScale,
+  onSelectScale,
+}: {
+  root: string;
+  mode: "major" | "minor";
+  tuningId: TuningId;
+  activeScale: ScaleId | null;
+  onSelectScale: (s: ScaleId) => void;
+}) {
+  const suggestions: ScaleId[] = mode === "minor"
+    ? ["pentatonic_minor", "blues", "minor", "dorian", "harmonic_minor"]
+    : ["pentatonic_major", "major", "mixolydian", "lydian", "blues"];
+
+  // Default to first suggestion if nothing picked, or if current pick isn't in this list.
+  const selected: ScaleId = activeScale && suggestions.includes(activeScale) ? activeScale : suggestions[0];
+  const scale = buildScale(root, selected);
+  const tuning = TUNINGS[tuningId];
+  const tPcs = tuningPcsFor(tuningId);
+  const positions: { string: number; fret: number; pc: number; isRoot: boolean }[] = [];
+  for (let s = 0; s < tPcs.length; s++) {
+    for (let f = 0; f <= 15; f++) {
+      const pc = (tPcs[s] + f) % 12;
+      if (scale.notes.includes(pc)) {
+        positions.push({ string: s, fret: f, pc, isRoot: pc === scale.rootPc });
+      }
+    }
+  }
 
   return (
     <Card kicker="// Suggested scales for solos">
+      <p className="mb-3 text-[11px] font-mono text-muted-foreground">
+        Tap a scale to load it on the keyboard and fretboard ({tuning.name}).
+      </p>
       <div className="mb-4 flex flex-wrap gap-2">
-        {[baseScale, mode === "minor" ? "blues" : "major", mode === "minor" ? "minor" : "mixolydian"].map((id, i) => (
-          <span key={i} className="rounded-md border border-gold/40 bg-gold/10 px-3 py-1 font-mono text-xs text-gold">
-            {root} {id.replace("_", " ")}
-          </span>
-        ))}
+        {suggestions.map((id) => {
+          const isActive = id === selected;
+          return (
+            <button
+              key={id}
+              onClick={() => onSelectScale(id)}
+              className={`rounded-md border px-3 py-1.5 font-mono text-xs transition-colors ${
+                isActive
+                  ? "border-gold bg-gold text-gold-foreground"
+                  : "border-gold/40 bg-gold/10 text-gold hover:bg-gold/20"
+              }`}
+            >
+              {root} {SCALES[id].name}
+            </button>
+          );
+        })}
       </div>
       <PianoKeyboard highlights={scale.notes} rootPc={noteToPc(root)} startMidi={48} octaves={2} />
       <div className="mt-4">
         <Fretboard
-          positions={positions.map((p) => ({ ...p, isRoot: p.isRoot }))}
+          positions={positions}
           rootPc={scale.rootPc}
           startFret={0}
           endFret={12}
+          tuningPcs={tPcs}
+          tuningMidi={tuning.midi}
+          stringLabels={tuning.labels}
         />
       </div>
     </Card>
