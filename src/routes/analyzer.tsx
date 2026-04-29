@@ -195,6 +195,19 @@ function AnalyzerPage() {
   const confidenceTier = result ? (result.key.confidence > 0.6 ? "high" : result.key.confidence > 0.35 ? "medium" : "low") : null;
   const finalBpm = bpmOverride ?? (result ? result.bpm.bpm : 0);
 
+  // Resolve the active solo scale (defaults to first suggestion) so the
+  // chord sheet + TAB can re-spell their note labels in that scale's idiom.
+  const suggestionList: ScaleId[] = finalKey
+    ? finalKey.mode === "minor"
+      ? ["pentatonic_minor", "blues", "minor", "dorian", "harmonic_minor"]
+      : ["pentatonic_major", "major", "mixolydian", "lydian", "blues"]
+    : [];
+  const resolvedScaleId: ScaleId | null = finalKey
+    ? activeScale && suggestionList.includes(activeScale)
+      ? activeScale
+      : suggestionList[0]
+    : null;
+
   const scrollToScales = () => {
     scalesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -378,6 +391,11 @@ function AnalyzerPage() {
           )}
 
           <Card kicker={`// Output${confidenceTier === "medium" ? " (approximate)" : ""}`}>
+            {resolvedScaleId && finalKey && (
+              <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-gold/40 bg-gold/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                Spelling: {finalKey.root} {SCALES[resolvedScaleId].name}
+              </div>
+            )}
             <Tabs defaultValue="chords" className="w-full">
               <TabsList className="bg-secondary/40">
                 <TabsTrigger value="chords">Chord sheet</TabsTrigger>
@@ -391,6 +409,8 @@ function AnalyzerPage() {
                     chord: s.chord,
                   }))}
                   audioRef={audioRef}
+                  scaleRoot={finalKey.root}
+                  scaleId={resolvedScaleId}
                 />
               </TabsContent>
 
@@ -401,6 +421,8 @@ function AnalyzerPage() {
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
                   audioRef={audioRef}
+                  scaleRoot={finalKey.root}
+                  scaleId={resolvedScaleId ?? undefined}
                 />
               </TabsContent>
             </Tabs>
@@ -554,6 +576,16 @@ type ChordSeg = {
 };
 
 const PC_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+const PC_NAMES_FLAT = ["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"];
+
+/** True if a scale's spelling tradition prefers flats (root in flat-key set, or natural minor). */
+function scaleUsesFlats(rootName: string, scaleId: ScaleId | null | undefined): boolean {
+  const flatRoots = ["F", "Bb", "Eb", "Ab", "Db", "Gb"];
+  if (flatRoots.includes(rootName)) return true;
+  if (!scaleId) return false;
+  // Minor-family scales conventionally written with flats
+  return ["minor", "pentatonic_minor", "blues", "dorian", "phrygian", "locrian", "harmonic_minor", "melodic_minor", "phrygian_dominant"].includes(scaleId);
+}
 
 /** Pick a MIDI note for `pc` whose value is closest to `target`. */
 function nearestPc(pc: number, target: number): number {
@@ -614,11 +646,11 @@ function bassVoicing(rootPc: number): number[] {
   return [nearestPc(rootPc, 31)];
 }
 
-/** Convert MIDI to display name like "C4", "F#3". */
-function midiName(m: number): string {
+/** Convert MIDI to display name like "C4", "F#3" (or "Bb3" with flats). */
+function midiName(m: number, useFlats = false): string {
   const pc = ((m % 12) + 12) % 12;
   const oct = Math.floor(m / 12) - 1;
-  return `${PC_NAMES[pc]}${oct}`;
+  return `${(useFlats ? PC_NAMES_FLAT : PC_NAMES)[pc]}${oct}`;
 }
 
 function fmtTime(sec: number) {
@@ -630,10 +662,15 @@ function fmtTime(sec: number) {
 function ChordChart({
   segments,
   audioRef,
+  scaleRoot,
+  scaleId,
 }: {
   segments: ChordSeg[];
   audioRef: React.RefObject<HTMLAudioElement | null>;
+  scaleRoot?: string;
+  scaleId?: ScaleId | null;
 }) {
+  const useFlats = scaleUsesFlats(scaleRoot ?? "C", scaleId);
   const [activeIdx, setActiveIdx] = useState<number | null>(null);
   const [snippetIdx, setSnippetIdx] = useState<number | null>(null);
   const snippetTimerRef = useRef<number | null>(null);
@@ -756,17 +793,17 @@ function ChordChart({
               <div className="mt-3 grid gap-1.5">
                 <InstrumentLine
                   label="Piano"
-                  notes={piano.map(midiName)}
+                  notes={piano.map((m) => midiName(m, useFlats))}
                   onPlay={() => playIsolated(i, "piano")}
                 />
                 <InstrumentLine
                   label="Guitar"
-                  notes={guitar.map(midiName)}
+                  notes={guitar.map((m) => midiName(m, useFlats))}
                   onPlay={() => playIsolated(i, "guitar")}
                 />
                 <InstrumentLine
                   label="Bass"
-                  notes={bass.map(midiName)}
+                  notes={bass.map((m) => midiName(m, useFlats))}
                   onPlay={() => playIsolated(i, "bass")}
                 />
               </div>

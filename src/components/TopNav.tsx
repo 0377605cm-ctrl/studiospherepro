@@ -4,7 +4,6 @@ import { AudioMixer } from "./AudioMixer";
 const links = [
   { to: "/", label: "Home" },
   { to: "/scales", label: "Scales & Theory" },
-  { to: "/riffs", label: "Riff Generator" },
   { to: "/circle", label: "Circle of Fifths" },
   { to: "/analyzer", label: "Audio Analyzer" },
 ] as const;
@@ -26,7 +25,7 @@ export function TopNav() {
               Studio<span className="text-gold">Sphere</span>
             </span>
             <span className="hidden text-[10px] font-mono uppercase tracking-widest text-muted-foreground sm:block">
-              Music Theory · AI · Toolkit
+              Music Theory · Toolkit
             </span>
           </div>
         </Link>

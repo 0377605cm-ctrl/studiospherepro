@@ -102,8 +102,9 @@ export function Fretboard({
                   style={{ top: y, left: NUT_WIDTH, right: 0, height: thickness }}
                 />
                 <div
-                  className="absolute -translate-y-1/2 font-mono text-[10px] text-muted-foreground"
-                  style={{ top: y, left: 0, width: 24, textAlign: "right" }}
+                  className="absolute -translate-y-1/2 rounded-sm border border-gold/40 bg-gold/10 px-1 font-mono text-[10px] font-bold text-gold"
+                  style={{ top: y, left: 0, width: 26, textAlign: "center" }}
+                  title={`String ${stringIdx + 1} tuned to ${stringLabels[stringIdx]}`}
                 >
                   {stringLabels[stringIdx]}
                 </div>
