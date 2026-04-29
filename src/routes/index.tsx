@@ -77,6 +77,12 @@ function Index() {
             title="Audio Analyzer"
             desc="Upload an MP3 and detect key + chord progression with confidence scoring and chord-sheet fallback."
           />
+          <FeatureCard
+            to="/freeplay"
+            kicker="04 — Play"
+            title="Free-Play"
+            desc="Tap notes on a full piano or fretboard. See possible chords from your notes and suggested progressions live."
+          />
         </div>
       </section>
 
@@ -99,7 +105,7 @@ function Index() {
   );
 }
 
-function FeatureCard({ to, kicker, title, desc }: { to: "/scales" | "/circle" | "/analyzer"; kicker: string; title: string; desc: string }) {
+function FeatureCard({ to, kicker, title, desc }: { to: "/scales" | "/circle" | "/analyzer" | "/freeplay"; kicker: string; title: string; desc: string }) {
   return (
     <Link
       to={to}

@@ -6,6 +6,7 @@ const links = [
   { to: "/scales", label: "Scales & Theory" },
   { to: "/circle", label: "Circle of Fifths" },
   { to: "/analyzer", label: "Audio Analyzer" },
+  { to: "/freeplay", label: "Free-Play" },
 ] as const;
 
 export function TopNav() {
