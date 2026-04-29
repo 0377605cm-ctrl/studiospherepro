@@ -6,17 +6,13 @@ import {
   SCALES,
   CHORD_FORMULAS,
   buildScale,
-  buildChord,
   diatonicChords,
   scalesByDifficulty,
-  noteToPc,
   pcToNote,
-  STANDARD_TUNING_PCS,
   STANDARD_TUNING_MIDI,
   type ScaleId,
   type ChordType,
 } from "@/lib/music/theory";
-import { PianoKeyboard } from "@/components/PianoKeyboard";
 import { Fretboard } from "@/components/Fretboard";
 import { playMidi, playChord, unlockAudio } from "@/lib/audio/synth";
 import { PageHeader, Card } from "./scales";
