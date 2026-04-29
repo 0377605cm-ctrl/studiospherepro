@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { CHORD_FORMULAS, NOTE_NAMES_SHARP, noteToPc } from "@/lib/music/theory";
+import { CHORD_FORMULAS, NOTE_NAMES_SHARP, noteToPc, SCALES, type ScaleId } from "@/lib/music/theory";
 
 /**
  * Renders a guitar TAB + treble-clef notation view from analyzer chord segments.
@@ -20,6 +20,9 @@ interface Props {
   keyRoot: string;
   keyMode: "major" | "minor";
   audioRef: RefObject<HTMLAudioElement | null>;
+  /** Active solo scale — drives note spelling (sharps vs flats) on the staff/TAB. */
+  scaleRoot?: string;
+  scaleId?: ScaleId;
 }
 
 const STRING_MIDI = [64, 59, 55, 50, 45, 40];
@@ -95,7 +98,7 @@ function nudge(value: number, delta: number, min: number, max: number) {
   return Number(clamp(value + delta, min, max).toFixed(2));
 }
 
-export function GuitarTab({ segments, bpm, keyRoot, keyMode, audioRef }: Props) {
+export function GuitarTab({ segments, bpm, keyRoot, keyMode, audioRef, scaleRoot, scaleId }: Props) {
   const [speed, setSpeed] = useState(1);
   const [fullscreen, setFullscreen] = useState(false);
   const [activeIdx, setActiveIdx] = useState<number>(-1);
@@ -186,7 +189,11 @@ export function GuitarTab({ segments, bpm, keyRoot, keyMode, audioRef }: Props) 
     return () => document.removeEventListener("fullscreenchange", onChange);
   }, []);
 
-  const useFlats = keyMode === "minor" || ["F", "Bb", "Eb", "Ab", "Db"].includes(keyRoot);
+  const flatRoots = ["F", "Bb", "Eb", "Ab", "Db", "Gb"];
+  const flatScales: ScaleId[] = ["minor", "pentatonic_minor", "blues", "dorian", "phrygian", "locrian", "harmonic_minor", "melodic_minor", "phrygian_dominant"];
+  const useFlats = scaleId
+    ? flatRoots.includes(scaleRoot ?? keyRoot) || flatScales.includes(scaleId)
+    : keyMode === "minor" || flatRoots.includes(keyRoot);
 
   const seekAndPlay = (startSec: number) => {
     const audioEl = audioRef.current;
@@ -495,6 +502,9 @@ export function GuitarTab({ segments, bpm, keyRoot, keyMode, audioRef }: Props) 
         <span>
           Key: <span className="text-gold">{keyRoot} {keyMode}</span> · Tempo: <span className="text-gold">{bpm} BPM</span> ·
           Time: <span className="text-gold">{beatsPerMeasure}/4</span>
+          {scaleId && (
+            <> · Scale: <span className="text-gold">{scaleRoot ?? keyRoot} {SCALES[scaleId].name}</span></>
+          )}
         </span>
         <span>{voicings.length} chord{voicings.length === 1 ? "" : "s"} · click any symbol to seek</span>
       </div>
