@@ -4,8 +4,8 @@ import { Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "StudioSphere — Visual Music Theory & AI Music Toolkit" },
-      { name: "description", content: "Learn scales, generate riffs, navigate the circle of fifths, and analyze any track. Guitar + Piano." },
+      { title: "StudioSphere — Visual Music Theory Toolkit" },
+      { name: "description", content: "Learn scales, navigate the circle of fifths, and analyze any track. Guitar + Piano." },
     ],
   }),
   component: Index,
@@ -24,11 +24,11 @@ function Index() {
           <h1 className="max-w-4xl text-4xl font-bold leading-[1.05] tracking-tight sm:text-6xl lg:text-7xl">
             Visual music theory.
             <br />
-            <span className="text-gold">AI riffs.</span>{" "}
+            <span className="text-gold">Decode any track.</span>{" "}
             <span className="text-muted-foreground">One toolkit.</span>
           </h1>
           <p className="mt-6 max-w-2xl text-base text-muted-foreground sm:text-lg">
-            See scales on guitar and piano. Generate riffs in any key, genre, and difficulty. Decode any song with the audio analyzer. Built for players who want to <em className="text-foreground not-italic">understand</em> what they hear.
+            See scales on guitar and piano. Decode any song with the audio analyzer. Navigate the circle of fifths with confidence. Built for players who want to <em className="text-foreground not-italic">understand</em> what they hear.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <Link
@@ -41,10 +41,10 @@ function Index() {
               </svg>
             </Link>
             <Link
-              to="/riffs"
+              to="/analyzer"
               className="inline-flex items-center gap-2 rounded-md border border-border bg-secondary/50 px-5 py-3 text-sm font-semibold transition-colors hover:bg-secondary"
             >
-              🎲 Inspire me
+              🎧 Analyze a track
             </Link>
           </div>
         </div>
@@ -55,10 +55,10 @@ function Index() {
         <div className="mb-10 flex items-end justify-between">
           <div>
             <p className="font-mono text-xs uppercase tracking-widest text-gold">// Modules</p>
-            <h2 className="mt-1 text-3xl font-semibold tracking-tight">Four pages, one workflow.</h2>
+            <h2 className="mt-1 text-3xl font-semibold tracking-tight">Three pages, one workflow.</h2>
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           <FeatureCard
             to="/scales"
             kicker="01 — Theory"
@@ -66,20 +66,14 @@ function Index() {
             desc="Visualize scales, modes, chords, and arpeggios across guitar and piano. Click any note to play it."
           />
           <FeatureCard
-            to="/riffs"
-            kicker="02 — Generate"
-            title="AI Riff Generator"
-            desc="Deterministic riff generator with TAB output, tempo control, and difficulty-aware phrasing."
-          />
-          <FeatureCard
             to="/circle"
-            kicker="03 — Navigate"
+            kicker="02 — Navigate"
             title="Circle of Fifths"
             desc="Interactive circle showing relative keys, dominants, and subdominants. Click to jump anywhere."
           />
           <FeatureCard
             to="/analyzer"
-            kicker="04 — Analyze"
+            kicker="03 — Analyze"
             title="Audio Analyzer"
             desc="Upload an MP3 and detect key + chord progression with confidence scoring and chord-sheet fallback."
           />
@@ -91,12 +85,12 @@ function Index() {
         <div className="mx-auto max-w-7xl px-6">
           <p className="font-mono text-xs uppercase tracking-widest text-gold">// Difficulty layers</p>
           <h2 className="mt-1 text-3xl font-semibold tracking-tight">Layered to never overwhelm.</h2>
-          <p className="mt-2 max-w-2xl text-muted-foreground">Every scale, chord, riff, and fretboard shape is tagged. The UI hides what you don't need yet.</p>
+          <p className="mt-2 max-w-2xl text-muted-foreground">Every scale, chord, and fretboard shape is tagged. The UI hides what you don't need yet.</p>
 
           <div className="mt-10 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <Tier color="emerald" name="Easy" items={["Major / Minor", "Pentatonic", "3-4 basic chords", "1 fretboard shape"]} />
             <Tier color="amber" name="Intermediate" items={["Modes (Dorian, Mixolydian)", "Barre chords", "Multiple positions", "Basic arpeggios"]} />
-            <Tier color="rose" name="Difficult" items={["Harmonic / Melodic minor", "7th chords + extensions", "Full neck mapping", "Advanced riffs"]} />
+            <Tier color="rose" name="Difficult" items={["Harmonic / Melodic minor", "7th chords + extensions", "Full neck mapping", "Advanced voicings"]} />
             <Tier color="fuchsia" name="Very Difficult" items={["Modal interchange", "Secondary dominants", "Exotic scales", "Sweep & advanced jazz"]} />
           </div>
         </div>
@@ -105,7 +99,7 @@ function Index() {
   );
 }
 
-function FeatureCard({ to, kicker, title, desc }: { to: "/scales" | "/riffs" | "/circle" | "/analyzer"; kicker: string; title: string; desc: string }) {
+function FeatureCard({ to, kicker, title, desc }: { to: "/scales" | "/circle" | "/analyzer"; kicker: string; title: string; desc: string }) {
   return (
     <Link
       to={to}
