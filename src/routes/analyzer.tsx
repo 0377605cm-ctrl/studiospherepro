@@ -195,6 +195,19 @@ function AnalyzerPage() {
   const confidenceTier = result ? (result.key.confidence > 0.6 ? "high" : result.key.confidence > 0.35 ? "medium" : "low") : null;
   const finalBpm = bpmOverride ?? (result ? result.bpm.bpm : 0);
 
+  // Resolve the active solo scale (defaults to first suggestion) so the
+  // chord sheet + TAB can re-spell their note labels in that scale's idiom.
+  const suggestionList: ScaleId[] = finalKey
+    ? finalKey.mode === "minor"
+      ? ["pentatonic_minor", "blues", "minor", "dorian", "harmonic_minor"]
+      : ["pentatonic_major", "major", "mixolydian", "lydian", "blues"]
+    : [];
+  const resolvedScaleId: ScaleId | null = finalKey
+    ? activeScale && suggestionList.includes(activeScale)
+      ? activeScale
+      : suggestionList[0]
+    : null;
+
   const scrollToScales = () => {
     scalesRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -378,6 +391,11 @@ function AnalyzerPage() {
           )}
 
           <Card kicker={`// Output${confidenceTier === "medium" ? " (approximate)" : ""}`}>
+            {resolvedScaleId && finalKey && (
+              <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-gold/40 bg-gold/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
+                Spelling: {finalKey.root} {SCALES[resolvedScaleId].name}
+              </div>
+            )}
             <Tabs defaultValue="chords" className="w-full">
               <TabsList className="bg-secondary/40">
                 <TabsTrigger value="chords">Chord sheet</TabsTrigger>
@@ -391,6 +409,8 @@ function AnalyzerPage() {
                     chord: s.chord,
                   }))}
                   audioRef={audioRef}
+                  scaleRoot={finalKey.root}
+                  scaleId={resolvedScaleId}
                 />
               </TabsContent>
 
@@ -401,6 +421,8 @@ function AnalyzerPage() {
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
                   audioRef={audioRef}
+                  scaleRoot={finalKey.root}
+                  scaleId={resolvedScaleId ?? undefined}
                 />
               </TabsContent>
             </Tabs>
