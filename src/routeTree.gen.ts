@@ -10,7 +10,6 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ScalesRouteImport } from './routes/scales'
-import { Route as RiffsRouteImport } from './routes/riffs'
 import { Route as CircleRouteImport } from './routes/circle'
 import { Route as AnalyzerRouteImport } from './routes/analyzer'
 import { Route as IndexRouteImport } from './routes/index'
@@ -18,11 +17,6 @@ import { Route as IndexRouteImport } from './routes/index'
 const ScalesRoute = ScalesRouteImport.update({
   id: '/scales',
   path: '/scales',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RiffsRoute = RiffsRouteImport.update({
-  id: '/riffs',
-  path: '/riffs',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CircleRoute = CircleRouteImport.update({
@@ -45,14 +39,12 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
-  '/riffs': typeof RiffsRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
-  '/riffs': typeof RiffsRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRoutesById {
@@ -60,22 +52,20 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
-  '/riffs': typeof RiffsRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/analyzer' | '/circle' | '/riffs' | '/scales'
+  fullPaths: '/' | '/analyzer' | '/circle' | '/scales'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/analyzer' | '/circle' | '/riffs' | '/scales'
-  id: '__root__' | '/' | '/analyzer' | '/circle' | '/riffs' | '/scales'
+  to: '/' | '/analyzer' | '/circle' | '/scales'
+  id: '__root__' | '/' | '/analyzer' | '/circle' | '/scales'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyzerRoute: typeof AnalyzerRoute
   CircleRoute: typeof CircleRoute
-  RiffsRoute: typeof RiffsRoute
   ScalesRoute: typeof ScalesRoute
 }
 
@@ -86,13 +76,6 @@ declare module '@tanstack/react-router' {
       path: '/scales'
       fullPath: '/scales'
       preLoaderRoute: typeof ScalesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/riffs': {
-      id: '/riffs'
-      path: '/riffs'
-      fullPath: '/riffs'
-      preLoaderRoute: typeof RiffsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/circle': {
@@ -123,7 +106,6 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyzerRoute: AnalyzerRoute,
   CircleRoute: CircleRoute,
-  RiffsRoute: RiffsRoute,
   ScalesRoute: ScalesRoute,
 }
 export const routeTree = rootRouteImport
