@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ScalesRouteImport } from './routes/scales'
+import { Route as FreeplayRouteImport } from './routes/freeplay'
 import { Route as CircleRouteImport } from './routes/circle'
 import { Route as AnalyzerRouteImport } from './routes/analyzer'
 import { Route as IndexRouteImport } from './routes/index'
@@ -17,6 +18,11 @@ import { Route as IndexRouteImport } from './routes/index'
 const ScalesRoute = ScalesRouteImport.update({
   id: '/scales',
   path: '/scales',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FreeplayRoute = FreeplayRouteImport.update({
+  id: '/freeplay',
+  path: '/freeplay',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CircleRoute = CircleRouteImport.update({
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
+  '/freeplay': typeof FreeplayRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
+  '/freeplay': typeof FreeplayRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/analyzer': typeof AnalyzerRoute
   '/circle': typeof CircleRoute
+  '/freeplay': typeof FreeplayRoute
   '/scales': typeof ScalesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/analyzer' | '/circle' | '/scales'
+  fullPaths: '/' | '/analyzer' | '/circle' | '/freeplay' | '/scales'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/analyzer' | '/circle' | '/scales'
-  id: '__root__' | '/' | '/analyzer' | '/circle' | '/scales'
+  to: '/' | '/analyzer' | '/circle' | '/freeplay' | '/scales'
+  id: '__root__' | '/' | '/analyzer' | '/circle' | '/freeplay' | '/scales'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AnalyzerRoute: typeof AnalyzerRoute
   CircleRoute: typeof CircleRoute
+  FreeplayRoute: typeof FreeplayRoute
   ScalesRoute: typeof ScalesRoute
 }
 
@@ -76,6 +86,13 @@ declare module '@tanstack/react-router' {
       path: '/scales'
       fullPath: '/scales'
       preLoaderRoute: typeof ScalesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/freeplay': {
+      id: '/freeplay'
+      path: '/freeplay'
+      fullPath: '/freeplay'
+      preLoaderRoute: typeof FreeplayRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/circle': {
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AnalyzerRoute: AnalyzerRoute,
   CircleRoute: CircleRoute,
+  FreeplayRoute: FreeplayRoute,
   ScalesRoute: ScalesRoute,
 }
 export const routeTree = rootRouteImport
