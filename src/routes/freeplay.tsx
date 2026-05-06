@@ -233,7 +233,7 @@ function FreePlayPage() {
 
       {/* Controls */}
       <Card kicker="// Setup">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
           <Field label="View">
             <div className="flex overflow-hidden rounded-md border border-border">
               {(["piano", "guitar"] as const).map((v) => (
