@@ -364,9 +364,14 @@ function FreePlayPage() {
           </span>
         }
       >
-        {matches.length === 0 ? (
+        {activePcs.length <= 1 ? (
           <p className="font-mono text-xs text-muted-foreground">
             Hold at least 2 notes to see chord matches. Try a triad — root, third, fifth.
+            {mode === "tap" && " (Switch to Hold mode to stack notes into chords.)"}
+          </p>
+        ) : matches.length === 0 ? (
+          <p className="font-mono text-xs text-muted-foreground">
+            No chord match for those notes — try adding/removing one.
           </p>
         ) : (
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
@@ -402,6 +407,52 @@ function FreePlayPage() {
           </div>
         )}
       </Card>
+
+      {/* Single-note → suggested scales */}
+      {singlePc !== null && (
+        <Card
+          kicker="// Scales from this note"
+          right={
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Rooted on <span className="text-gold">{singleNoteName}</span>
+            </span>
+          }
+        >
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Tap a scale to load it on the {view === "piano" ? "keyboard" : "fretboard"}.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+            {scaleSuggestions.map((s) => {
+              const isCurrent = keyRoot === singleNoteName && scaleId === s.id;
+              return (
+                <button
+                  key={s.id}
+                  onClick={() => { setKeyRoot(singleNoteName!); setScaleId(s.id); }}
+                  className={`rounded-lg border p-3 text-left transition-all hover:border-gold/60 hover:bg-secondary ${
+                    isCurrent ? "border-gold bg-gold/10" : "border-border bg-secondary/40"
+                  }`}
+                >
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-gold">
+                    {singleNoteName} {s.name}
+                  </div>
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {s.scale.noteNames.map((n, i) => (
+                      <span
+                        key={i}
+                        className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                          i === 0 ? "bg-gold text-gold-foreground font-semibold" : "bg-background text-foreground"
+                        }`}
+                      >
+                        {n}
+                      </span>
+                    ))}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Progression suggestions */}
       <Card
