@@ -30,6 +30,7 @@ export const Route = createFileRoute("/freeplay")({
 });
 
 type View = "piano" | "guitar";
+type PlayMode = "hold" | "tap";
 
 /* ---------- Chord identification ---------- */
 
@@ -137,6 +138,7 @@ function suggestProgressions(rootPc: number, type: ChordType, keyRoot: string, s
 
 function FreePlayPage() {
   const [view, setView] = useState<View>("piano");
+  const [mode, setMode] = useState<PlayMode>("hold");
   const [active, setActive] = useState<Set<number>>(new Set()); // MIDI numbers
   const [keyRoot, setKeyRoot] = useState("C");
   const [scaleId, setScaleId] = useState<ScaleId>("major");
@@ -160,6 +162,23 @@ function FreePlayPage() {
 
   const toggleNote = useCallback((midi: number) => {
     void unlockAudio();
+    if (mode === "tap") {
+      // Play the note once and don't retain it. Briefly flash via active set.
+      playMidi(midi, { duration: 0.5, type: view === "piano" ? "triangle" : "sawtooth" });
+      setActive((prev) => {
+        const next = new Set(prev);
+        next.add(midi);
+        return next;
+      });
+      window.setTimeout(() => {
+        setActive((prev) => {
+          const next = new Set(prev);
+          next.delete(midi);
+          return next;
+        });
+      }, 350);
+      return;
+    }
     setActive((prev) => {
       const next = new Set(prev);
       if (next.has(midi)) {
@@ -170,9 +189,25 @@ function FreePlayPage() {
       }
       return next;
     });
-  }, [view]);
+  }, [view, mode]);
 
   const clearNotes = () => setActive(new Set());
+
+  // When exactly one note is held, suggest scales rooted on that pitch class.
+  const singlePc = activePcs.length === 1 ? activePcs[0] : null;
+  const singleNoteName = singlePc !== null ? NOTE_NAMES_SHARP[singlePc] : null;
+  const scaleSuggestions = useMemo(() => {
+    if (singleNoteName === null) return [];
+    const ids: ScaleId[] = [
+      "major", "minor", "pentatonic_major", "pentatonic_minor", "blues",
+      "dorian", "mixolydian", "lydian", "phrygian", "harmonic_minor",
+    ];
+    return ids.map((id) => ({
+      id,
+      name: SCALES[id].name,
+      scale: buildScale(singleNoteName, id),
+    }));
+  }, [singleNoteName]);
 
   const playActive = () => {
     const midis = Array.from(active).sort((a, b) => a - b);
@@ -210,6 +245,22 @@ function FreePlayPage() {
                   }`}
                 >
                   {v === "piano" ? "🎹 Piano" : "🎸 Guitar"}
+                </button>
+              ))}
+            </div>
+          </Field>
+          <Field label="Mode">
+            <div className="flex overflow-hidden rounded-md border border-border">
+              {(["hold", "tap"] as const).map((m) => (
+                <button
+                  key={m}
+                  onClick={() => { setMode(m); if (m === "tap") clearNotes(); }}
+                  className={`flex-1 px-3 py-2 font-mono text-xs uppercase tracking-widest transition-colors ${
+                    mode === m ? "bg-gold text-gold-foreground" : "bg-secondary text-muted-foreground hover:text-foreground"
+                  }`}
+                  title={m === "hold" ? "Notes stay until cleared — build chords" : "Notes play once and release"}
+                >
+                  {m === "hold" ? "🔒 Hold" : "👆 Tap"}
                 </button>
               ))}
             </div>
