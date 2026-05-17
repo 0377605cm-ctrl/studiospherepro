@@ -32,6 +32,18 @@ export const Route = createFileRoute("/freeplay")({
 type View = "piano" | "guitar";
 type PlayMode = "hold" | "tap";
 
+const FRET_RANGES = [
+  { label: "Open", start: 0, end: 5 },
+  { label: "1-5", start: 1, end: 5 },
+  { label: "5-9", start: 5, end: 9 },
+  { label: "7-12", start: 7, end: 12 },
+  { label: "12-17", start: 12, end: 17 },
+  { label: "Full", start: 0, end: 24 },
+] as const;
+
+const MAX_FRET = 24;
+const DEFAULT_FRET_END = 15;
+
 /* ---------- Chord identification ---------- */
 
 interface ChordMatch {
@@ -143,9 +155,17 @@ function FreePlayPage() {
   const [keyRoot, setKeyRoot] = useState("C");
   const [scaleId, setScaleId] = useState<ScaleId>("major");
   const [showScaleOverlay, setShowScaleOverlay] = useState(true);
+  const [fretStart, setFretStart] = useState(0);
+  const [fretEnd, setFretEnd] = useState(DEFAULT_FRET_END);
 
   const scales = scalesByDifficulty("very-difficult");
   const scale = useMemo(() => buildScale(keyRoot, scaleId), [keyRoot, scaleId]);
+  const visibleFretRange = `${fretStart}-${fretEnd}`;
+
+  const setFretRange = (start: number, end: number) => {
+    setFretStart(start);
+    setFretEnd(end);
+  };
 
   const activePcs = useMemo(() => {
     const s = new Set<number>();
@@ -329,28 +349,77 @@ function FreePlayPage() {
           </p>
         </Card>
       ) : (
-        <Card kicker="// Guitar · 6 strings · 15 frets">
+        <Card
+          kicker={`// Guitar · 6 strings · frets ${visibleFretRange}`}
+          right={
+            <div className="flex flex-wrap justify-end gap-1.5">
+              {FRET_RANGES.map((range) => {
+                const isActive = fretStart === range.start && fretEnd === range.end;
+                return (
+                  <button
+                    key={range.label}
+                    onClick={() => setFretRange(range.start, range.end)}
+                    className={`rounded-md border px-2 py-1 font-mono text-[9px] uppercase tracking-widest transition-colors ${
+                      isActive
+                        ? "border-gold bg-gold text-gold-foreground"
+                        : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/60 hover:text-gold"
+                    }`}
+                  >
+                    {range.label}
+                  </button>
+                );
+              })}
+            </div>
+          }
+        >
+          <div className="mb-4 rounded-lg border border-border/60 bg-secondary/30 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="font-mono text-[10px] uppercase tracking-widest text-gold">Fret position</div>
+                <p className="mt-1 font-mono text-[10px] text-muted-foreground">
+                  Slide the window to see the same scale tones and held notes in other neck positions.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 font-mono text-xs text-muted-foreground">
+                <span>{fretStart}</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={MAX_FRET - (fretEnd - fretStart)}
+                  value={fretStart}
+                  onChange={(e) => {
+                    const nextStart = Number(e.target.value);
+                    const span = fretEnd - fretStart;
+                    setFretRange(nextStart, nextStart + span);
+                  }}
+                  className="w-44 accent-gold"
+                  aria-label="Move fretboard position"
+                />
+                <span>{fretEnd}</span>
+              </div>
+            </div>
+          </div>
           <Fretboard
             positions={Array.from(active).flatMap((midi) => {
               const positions: { string: number; fret: number; pc: number; isRoot: boolean; label?: string }[] = [];
               for (let s = 0; s < 6; s++) {
                 const fret = midi - STANDARD_TUNING_MIDI[s];
-                if (fret >= 0 && fret <= 15) {
+                if (fret >= fretStart && fret <= fretEnd) {
                   const pc = ((midi % 12) + 12) % 12;
                   positions.push({ string: s, fret, pc, isRoot: pc === scale.rootPc });
                 }
               }
               return positions;
             })}
-            startFret={0}
-            endFret={15}
+            startFret={fretStart}
+            endFret={fretEnd}
             rootPc={scale.rootPc}
             scalePcs={showScaleOverlay ? scale.notes : undefined}
             height={220}
           />
-          <FretClickGrid active={active} onToggle={toggleNote} />
+          <FretClickGrid active={active} onToggle={toggleNote} startFret={fretStart} endFret={fretEnd} />
           <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-            Tap any cell below to toggle that fret. Held notes appear on the fretboard above.
+            Tap any cell below to toggle that fret. Use the buttons or slider to move the playable window across the neck.
           </p>
         </Card>
       )}
@@ -601,13 +670,17 @@ function FreePlayPiano({
 function FretClickGrid({
   active,
   onToggle,
+  startFret,
+  endFret,
 }: {
   active: Set<number>;
   onToggle: (midi: number) => void;
+  startFret: number;
+  endFret: number;
 }) {
   const STRINGS = [0, 1, 2, 3, 4, 5]; // low E .. high E
   const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
-  const FRETS = Array.from({ length: 16 }, (_, i) => i); // 0..15
+  const FRETS = Array.from({ length: endFret - startFret + 1 }, (_, i) => startFret + i);
 
   return (
     <div className="mt-4 overflow-x-auto rounded-lg border border-border/60 bg-card/30 p-2">
