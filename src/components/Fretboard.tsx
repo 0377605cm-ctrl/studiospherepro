@@ -42,6 +42,7 @@ export function Fretboard({
   const numStrings = 6;
   const stringSpacing = (height - 30) / (numStrings - 1);
   const NUT_WIDTH = 30; // px reserved for string labels / nut
+  const minWidth = Math.max(640, NUT_WIDTH + fretCount * 56);
 
   // index positions for fast lookup
   const posMap = new Map<string, Position>();
@@ -49,7 +50,7 @@ export function Fretboard({
 
   return (
     <div className="overflow-x-auto rounded-lg border border-border/60 bg-gradient-to-b from-[oklch(0.16_0.01_60)] to-[oklch(0.12_0.005_60)] p-4 shadow-inner">
-      <div className="relative" style={{ minWidth: 640, height: height + 40 }}>
+      <div className="relative" style={{ minWidth, height: height + 40 }}>
         {/* Fret numbers */}
         <div className="mb-2 flex">
           <div style={{ width: NUT_WIDTH, flex: "0 0 auto" }} />
