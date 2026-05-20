@@ -31,6 +31,23 @@ function cosine(a: number[], b: number[]): number {
   return dot(a, b) / (norm(a) * norm(b));
 }
 
+function sum(a: number[]): number {
+  return a.reduce((s, x) => s + x, 0);
+}
+
+function rms(samples: Float32Array): number {
+  let total = 0;
+  for (let i = 0; i < samples.length; i++) total += samples[i] * samples[i];
+  return Math.sqrt(total / Math.max(1, samples.length));
+}
+
+function normalizeChroma(chroma: number[]): number[] {
+  const max = Math.max(...chroma) || 1;
+  const compressed = chroma.map((v) => Math.sqrt(Math.max(0, v) / max));
+  const cMax = Math.max(...compressed) || 1;
+  return compressed.map((v) => v / cMax);
+}
+
 /** Pearson correlation — better for matching shape of profiles than cosine. */
 function pearson(a: number[], b: number[]): number {
   const n = a.length;
@@ -115,11 +132,20 @@ export function detectChord(chroma: number[]): { symbol: string; rootPc: number;
 
       // Base shape match
       let score = cosine(chroma, tmpl);
+      const chordEnergy = dot(chroma, tmpl);
+      const totalEnergy = sum(chroma) || 1;
+      const toneRatio = chordEnergy / totalEnergy;
+      score *= 0.6 + 0.4 * toneRatio;
 
       // Strong reward for the bass/root being present (the root pitch class
       // really should have meaningful energy — fixes wrong-root detections).
       const rootEnergy = chroma[r];
       score *= 0.55 + 0.45 * rootEnergy;
+
+      if (t === "maj" || t === "min") {
+        const thirdPc = (r + (t === "maj" ? 4 : 3)) % 12;
+        if (chroma[thirdPc] < 0.22) score *= 0.78;
+      }
 
       // For 7-chords: only credit them if the 7th is *actually* prominent.
       // Otherwise we bleed major/minor triads into 7ths constantly.
@@ -148,6 +174,36 @@ export function detectChord(chroma: number[]): { symbol: string; rootPc: number;
     }
   }
   return { symbol: best.symbol, rootPc: best.root, type: best.type, confidence: Math.max(0, Math.min(1, best.score)) };
+}
+
+type SegmentResult = { startSec: number; chroma: number[]; chord: ReturnType<typeof detectChord> };
+
+function smoothChordSegments(segments: SegmentResult[]): SegmentResult[] {
+  if (segments.length < 3) return segments;
+  const corrected = segments.map((s) => ({ ...s, chord: { ...s.chord } }));
+
+  for (let i = 1; i < corrected.length - 1; i++) {
+    const prev = corrected[i - 1].chord;
+    const cur = corrected[i].chord;
+    const next = corrected[i + 1].chord;
+    if (prev.symbol === next.symbol && cur.symbol !== prev.symbol && cur.confidence < 0.72) {
+      corrected[i].chord = {
+        ...prev,
+        confidence: Math.max(0.35, Math.min(prev.confidence, next.confidence) * 0.92),
+      };
+    }
+  }
+
+  const compact: SegmentResult[] = [];
+  for (const seg of corrected) {
+    const last = compact[compact.length - 1];
+    if (last && last.chord.symbol === seg.chord.symbol) {
+      last.chord.confidence = Math.max(last.chord.confidence, seg.chord.confidence);
+      continue;
+    }
+    compact.push(seg);
+  }
+  return compact;
 }
 
 /** Compute chroma vector from a Float32Array spectrum (magnitudes). */
@@ -344,6 +400,8 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
 
   for (let start = 0; start + segmentSamples <= mono.length; start += segmentSamples) {
     const segment = mono.slice(start, start + segmentSamples);
+    const level = rms(segment);
+    if (level < 0.003) continue;
     // window
     for (let i = 0; i < segment.length; i++) {
       segment[i] *= 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / segment.length);
@@ -354,8 +412,7 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
       for (const { f, w } of freqsByPc[pc]) sum += w * goertzel(segment, f, sampleRate);
       chroma[pc] = sum;
     }
-    const max = Math.max(...chroma) || 1;
-    const norm = chroma.map((v) => v / max);
+    const norm = normalizeChroma(chroma);
     // Emphasize bass band for the *overall* (key) chroma — root motion lives
     // there. We approximate by weighting segments with stronger low-band
     // energy more, but here just accumulate normalized; root weighting is
@@ -363,6 +420,10 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
     for (let i = 0; i < 12; i++) overallChroma[i] += norm[i];
     const chord = detectChord(norm);
     segments.push({ startSec: start / sampleRate, chroma: norm, chord });
+  }
+
+  if (segments.length === 0) {
+    throw new Error("No usable pitched audio was found. Try a louder clip with clear instruments or vocals.");
   }
 
   // --- Build a separate, harmonic-suppressed chroma for KEY detection ---
@@ -384,9 +445,11 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
   const sMax = Math.max(...suppressed) || 1;
   const keyChromaNorm = suppressed.map((v) => v / sMax);
 
+  const smoothedSegments = smoothChordSegments(segments);
+
   return {
     overallChroma: overallNorm,
-    segments,
+    segments: smoothedSegments,
     key: detectKey(keyChromaNorm),
     bpm: detectBPM(mono, sampleRate),
     durationSec: buffer.duration,
