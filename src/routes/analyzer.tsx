@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState, useEffect } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import { Card, PageHeader } from "./scales";
 import { analyzeAudioBuffer } from "@/lib/audio/analyzer";
 import {
@@ -30,9 +30,79 @@ export const Route = createFileRoute("/analyzer")({
 });
 
 type Result = Awaited<ReturnType<typeof analyzeAudioBuffer>>;
+type AnalyzerSegment = Result["segments"][number];
 
 const MAX_FILE_SIZE_MB = 50;
 const MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024;
+
+const CHORD_SUFFIX_TO_TYPE = [
+  ["maj9", "maj9"],
+  ["m7b5", "m7b5"],
+  ["maj7", "maj7"],
+  ["min9", "min9"],
+  ["m9", "min9"],
+  ["min7", "min7"],
+  ["m7", "min7"],
+  ["sus2", "sus2"],
+  ["sus4", "sus4"],
+  ["dim7", "dim7"],
+  ["dim", "dim"],
+  ["aug", "aug"],
+  ["13", "dom13"],
+  ["7", "dom7"],
+  ["m", "min"],
+  ["min", "min"],
+  ["", "maj"],
+] as const;
+
+function parseReferenceKey(input: string): { root: string; mode: "major" | "minor" } | null {
+  const normalized = input.trim().replace(/♯/g, "#").replace(/♭/g, "b");
+  const match = normalized.match(/^([A-G](?:#|b)?)(?:\s+|-)?(major|minor|maj|min|m)?$/i);
+  if (!match) return null;
+  const rootPc = noteToPc(match[1]);
+  const modeText = (match[2] ?? "major").toLowerCase();
+  return {
+    root: NOTE_NAMES_SHARP[rootPc],
+    mode: modeText === "minor" || modeText === "min" || modeText === "m" ? "minor" : "major",
+  };
+}
+
+function parseChordSymbol(raw: string): AnalyzerSegment["chord"] | null {
+  const cleaned = raw.trim().replace(/♯/g, "#").replace(/♭/g, "b");
+  const match = cleaned.match(/^([A-G](?:#|b)?)(.*)$/i);
+  if (!match) return null;
+
+  const rootPc = noteToPc(match[1]);
+  const suffix = match[2].trim().replace(/^:/, "").toLowerCase();
+  const found = CHORD_SUFFIX_TO_TYPE.find(([candidate]) => suffix === candidate);
+  if (!found) return null;
+  const type = found[1] as keyof typeof CHORD_FORMULAS;
+  return {
+    symbol: `${NOTE_NAMES_SHARP[rootPc]}${CHORD_FORMULAS[type].suffix}`,
+    rootPc,
+    type,
+    confidence: 1,
+  };
+}
+
+function parseReferenceChordText(text: string, durationSec: number): AnalyzerSegment[] {
+  const tokens = text
+    .replace(/\|/g, " ")
+    .replace(/[,\n\r\t]+/g, " ")
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const chords = tokens.map(parseChordSymbol).filter((c): c is AnalyzerSegment["chord"] => Boolean(c));
+  if (chords.length === 0) return [];
+
+  const step = durationSec / chords.length;
+  return chords.map((chord, i) => ({
+    startSec: Math.round(i * step * 100) / 100,
+    chroma: [],
+    chord,
+  }));
+}
 
 /** Detect mobile / low-memory devices so we can warn users + downsample. */
 function isLowPowerDevice(): boolean {
@@ -90,6 +160,11 @@ function AnalyzerPage() {
   const [tuningId, setTuningId] = useState<TuningId>("standard");
   const [activeScale, setActiveScale] = useState<ScaleId | null>(null);
   const [progressNote, setProgressNote] = useState<string>("");
+  const [referenceQuery, setReferenceQuery] = useState("");
+  const [referenceKey, setReferenceKey] = useState("");
+  const [referenceBpm, setReferenceBpm] = useState("");
+  const [referenceChords, setReferenceChords] = useState("");
+  const [useReferenceChords, setUseReferenceChords] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const scalesRef = useRef<HTMLDivElement | null>(null);
@@ -116,6 +191,11 @@ function AnalyzerPage() {
     setErrorMsg("");
     setResult(null);
     setProgressNote("");
+    setReferenceQuery(file.name.replace(/\.[^.]+$/, "").replace(/[-_]+/g, " ").trim());
+    setReferenceKey("");
+    setReferenceBpm("");
+    setReferenceChords("");
+    setUseReferenceChords(false);
 
     // 1. Hard size limit
     if (file.size > MAX_FILE_SIZE_BYTES) {
@@ -177,7 +257,7 @@ function AnalyzerPage() {
 
       // give UI a tick
       await new Promise((r) => setTimeout(r, 50));
-      const res = await analyzeAudioBuffer(workBuffer, lowPower ? 4 : 2);
+      const res = await analyzeAudioBuffer(workBuffer, lowPower ? 3 : 1.5);
       setResult(res);
       const url = URL.createObjectURL(file);
       setAudioUrl(url);
@@ -194,6 +274,12 @@ function AnalyzerPage() {
   const finalKey = keyOverride ?? (result ? { root: result.key.root, mode: result.key.mode } : null);
   const confidenceTier = result ? (result.key.confidence > 0.6 ? "high" : result.key.confidence > 0.35 ? "medium" : "low") : null;
   const finalBpm = bpmOverride ?? (result ? result.bpm.bpm : 0);
+  const referenceSegments = useMemo(() => {
+    if (!result || !useReferenceChords) return null;
+    const parsed = parseReferenceChordText(referenceChords, result.durationSec);
+    return parsed.length > 0 ? parsed : null;
+  }, [referenceChords, result, useReferenceChords]);
+  const outputSegments = referenceSegments ?? result?.segments ?? [];
 
   // Resolve the active solo scale (defaults to first suggestion) so the
   // chord sheet + TAB can re-spell their note labels in that scale's idiom.
@@ -356,6 +442,121 @@ function AnalyzerPage() {
             </Card>
           )}
 
+          <Card
+            kicker="// Reference lookup"
+            right={
+              referenceSegments && (
+                <span className="font-mono text-[10px] uppercase tracking-widest text-gold">
+                  Using reference chords
+                </span>
+              )
+            }
+          >
+            <div className="grid gap-4 lg:grid-cols-[1fr_1.2fr]">
+              <div className="space-y-3">
+                <div>
+                  <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Song / artist search
+                  </div>
+                  <input
+                    value={referenceQuery}
+                    onChange={(e) => setReferenceQuery(e.target.value)}
+                    placeholder="Example: Billie Jean Michael Jackson"
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {[
+                    { label: "Key + BPM", url: `https://www.google.com/search?q=${encodeURIComponent(`${referenceQuery} key bpm`)}` },
+                    { label: "Chords", url: `https://www.google.com/search?q=${encodeURIComponent(`${referenceQuery} chords`)}` },
+                    { label: "SongBPM", url: `https://songbpm.com/searches/${encodeURIComponent(referenceQuery)}` },
+                    { label: "Tunebat", url: `https://tunebat.com/Search?q=${encodeURIComponent(referenceQuery)}` },
+                    { label: "Chordify", url: `https://chordify.net/search/${encodeURIComponent(referenceQuery)}` },
+                  ].map((item) => (
+                    <button
+                      key={item.label}
+                      onClick={() => window.open(item.url, "_blank", "noopener,noreferrer")}
+                      disabled={!referenceQuery.trim()}
+                      className="rounded-md border border-border bg-secondary px-3 py-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground transition-colors hover:border-gold/60 hover:text-gold disabled:opacity-40"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="font-mono text-[10px] text-muted-foreground">
+                  Use these links to double-check released songs. For unreleased songs, keep the analyzer result and manual corrections.
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Verified key
+                    </div>
+                    <input
+                      value={referenceKey}
+                      onChange={(e) => setReferenceKey(e.target.value)}
+                      placeholder="C major, A minor"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+                    />
+                  </div>
+                  <div>
+                    <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                      Verified BPM
+                    </div>
+                    <input
+                      value={referenceBpm}
+                      onChange={(e) => setReferenceBpm(e.target.value)}
+                      placeholder="120"
+                      inputMode="numeric"
+                      className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <div className="mb-1.5 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Verified chords
+                  </div>
+                  <textarea
+                    value={referenceChords}
+                    onChange={(e) => {
+                      setReferenceChords(e.target.value);
+                      setUseReferenceChords(false);
+                    }}
+                    placeholder="Paste chords like: C G Am F | C G F C"
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 font-mono text-sm"
+                  />
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => {
+                      const parsedKey = parseReferenceKey(referenceKey);
+                      const parsedBpm = Number(referenceBpm);
+                      if (parsedKey) setKeyOverride(parsedKey);
+                      if (Number.isFinite(parsedBpm) && parsedBpm >= 40 && parsedBpm <= 240) {
+                        setBpmOverride(Math.round(parsedBpm));
+                      }
+                      setUseReferenceChords(parseReferenceChordText(referenceChords, result.durationSec).length > 0);
+                    }}
+                    className="rounded-md border border-gold/50 bg-gold/10 px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-gold transition-colors hover:bg-gold/20"
+                  >
+                    Apply reference corrections
+                  </button>
+                  {referenceSegments && (
+                    <button
+                      onClick={() => setUseReferenceChords(false)}
+                      className="rounded-md border border-border px-3 py-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground hover:border-gold/50 hover:text-gold"
+                    >
+                      Use analyzer chords
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </Card>
+
           <div className="grid gap-4 md:grid-cols-3">
             <DetectionCard
               label="Detected key"
@@ -390,7 +591,7 @@ function AnalyzerPage() {
             </Card>
           )}
 
-          <Card kicker={`// Output${confidenceTier === "medium" ? " (approximate)" : ""}`}>
+          <Card kicker={`// Output${referenceSegments ? " (reference corrected)" : confidenceTier === "medium" ? " (approximate)" : ""}`}>
             {resolvedScaleId && finalKey && (
               <div className="mb-3 inline-flex items-center gap-2 rounded-md border border-gold/40 bg-gold/10 px-2 py-1 font-mono text-[10px] uppercase tracking-widest text-gold">
                 Spelling: {finalKey.root} {SCALES[resolvedScaleId].name}
@@ -404,7 +605,7 @@ function AnalyzerPage() {
 
               <TabsContent value="chords">
                 <ChordChart
-                  segments={result.segments.map((s) => ({
+                  segments={outputSegments.map((s) => ({
                     startSec: s.startSec,
                     chord: s.chord,
                   }))}
@@ -416,7 +617,7 @@ function AnalyzerPage() {
 
               <TabsContent value="tab">
                 <GuitarTab
-                  segments={result.segments.map((s) => ({ startSec: s.startSec, chord: s.chord }))}
+                  segments={outputSegments.map((s) => ({ startSec: s.startSec, chord: s.chord }))}
                   bpm={finalBpm}
                   keyRoot={finalKey.root}
                   keyMode={finalKey.mode}
@@ -444,9 +645,9 @@ function AnalyzerPage() {
         <Card kicker="// How it works">
           <ol className="space-y-2 text-sm text-muted-foreground">
             <li><span className="text-gold font-mono mr-2">01</span> Audio is decoded locally in your browser — nothing is uploaded.</li>
-            <li><span className="text-gold font-mono mr-2">02</span> We compute chroma features per 2-second segment using Goertzel filters.</li>
+            <li><span className="text-gold font-mono mr-2">02</span> We compute chroma features in short overlapping-feel windows using weighted Goertzel filters.</li>
             <li><span className="text-gold font-mono mr-2">03</span> Key is matched against Krumhansl-Schmuckler profiles with a confidence score.</li>
-            <li><span className="text-gold font-mono mr-2">04</span> Chords are template-matched against the chroma; BPM is autocorrelated from onset energy.</li>
+            <li><span className="text-gold font-mono mr-2">04</span> Chords are template-matched, confidence-scored, and smoothed so single-window misreads do not clutter the chart.</li>
             <li><span className="text-gold font-mono mr-2">05</span> Low confidence? You'll see a chord sheet with manual override. High confidence opens TAB-ready output.</li>
           </ol>
         </Card>
