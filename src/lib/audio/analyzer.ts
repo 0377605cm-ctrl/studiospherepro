@@ -398,10 +398,14 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
     return Math.sqrt(Math.max(0, power));
   }
 
+  const SILENCE_RMS = 0.00035;
+
   for (let start = 0; start + segmentSamples <= mono.length; start += segmentSamples) {
     const segment = mono.slice(start, start + segmentSamples);
     const level = rms(segment);
-    if (level < 0.003) continue;
+    if (level < SILENCE_RMS) {
+      continue;
+    }
     // window
     for (let i = 0; i < segment.length; i++) {
       segment[i] *= 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / segment.length);
@@ -423,7 +427,30 @@ export async function analyzeAudioBuffer(buffer: AudioBuffer, segmentSeconds = 2
   }
 
   if (segments.length === 0) {
-    throw new Error("No usable pitched audio was found. Try a louder clip with clear instruments or vocals.");
+    // Some MP3s decode very quietly after normalization/downsampling. If every
+    // segment fell below the silence gate, rerun without the gate so upload
+    // still succeeds and the user can use manual/reference correction.
+    for (let start = 0; start + segmentSamples <= mono.length; start += segmentSamples) {
+      const segment = mono.slice(start, start + segmentSamples);
+      for (let i = 0; i < segment.length; i++) {
+        segment[i] *= 0.5 - 0.5 * Math.cos((2 * Math.PI * i) / segment.length);
+      }
+      const chroma = new Array(12).fill(0);
+      for (let pc = 0; pc < 12; pc++) {
+        let sum = 0;
+        for (const { f, w } of freqsByPc[pc]) sum += w * goertzel(segment, f, sampleRate);
+        chroma[pc] = sum;
+      }
+      const norm = normalizeChroma(chroma);
+      for (let i = 0; i < 12; i++) overallChroma[i] += norm[i];
+      const chord = detectChord(norm);
+      chord.confidence *= 0.65;
+      segments.push({ startSec: start / sampleRate, chroma: norm, chord });
+    }
+  }
+
+  if (segments.length === 0) {
+    throw new Error("Audio decoded, but the clip was too short to analyze. Try a longer MP3 or WAV.");
   }
 
   // --- Build a separate, harmonic-suppressed chroma for KEY detection ---
