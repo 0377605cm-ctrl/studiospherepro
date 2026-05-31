@@ -216,10 +216,10 @@ function AnalyzerPage() {
 
       // Build / resume an AudioContext (Safari + iOS need a user gesture; this handler IS a gesture).
       const Ctor = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (!Ctor) {
-        console.warn("No usable pitched audio was found");
-return [];
-      const ac = new Ctor();
+     if (!Ctor) {
+  throw new Error("Your browser doesn't expose AudioContext — try Chrome, Firefox, Safari 14+, or Edge.");
+}
+const ac = new Ctor();
       if (ac.state === "suspended") {
         try { await ac.resume(); } catch { /* ignore */ }
       }
