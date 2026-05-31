@@ -234,11 +234,11 @@ const ac = new Ctor();
             (p as Promise<AudioBuffer>).then(resolve, reject);
           }
         });
-      } catch (decodeErr) {
-        console.warn(describeDecodeError(decodeErr, file));
-return [];
+     } catch (decodeErr) {
+  throw new Error(describeDecodeError(decodeErr, file));
+}
 
-      setStatus("analyzing");
+setStatus("analyzing");
       setProgressNote(
         lowPower
           ? "Low-power device detected — downsampling to 16 kHz mono before analysis…"
