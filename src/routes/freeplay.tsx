@@ -415,9 +415,11 @@ function FreePlayPage() {
             onToggle={toggleNote}
             scalePcs={showScaleOverlay ? scale.notes : []}
             rootPc={scale.rootPc}
+            degreeByPc={degreeByPc}
+            chordPcs={chordPcSet}
           />
           <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-            Click keys to add/remove them. Gold dot = scale note · Gold key = key root.
+            Click keys to add/remove them (Hold mode) or play once (Tap mode). Scale-degree numbers (1–7) appear on scale notes; degrees in the detected chord are ringed in gold.
           </p>
         </Card>
       ) : (
@@ -489,9 +491,17 @@ function FreePlayPage() {
             scalePcs={showScaleOverlay ? scale.notes : undefined}
             height={220}
           />
-          <FretClickGrid active={active} onToggle={toggleNote} startFret={fretStart} endFret={fretEnd} />
+          <FretClickGrid
+            active={active}
+            onToggle={toggleNote}
+            onSlide={(from, to) => playSlide(from, to)}
+            startFret={fretStart}
+            endFret={fretEnd}
+            degreeByPc={degreeByPc}
+            chordPcs={chordPcSet}
+          />
           <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-            Tap any cell below to toggle that fret. Use the buttons or slider to move the playable window across the neck.
+            Tap a cell to toggle that fret. <span className="text-gold">Drag from one fret to another on the same string</span> to hear a slide. Degree numbers (1–7) appear on scale notes; chord-tone degrees are ringed in gold.
           </p>
         </Card>
       )}
