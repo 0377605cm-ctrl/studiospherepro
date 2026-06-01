@@ -675,16 +675,16 @@ function FreePlayPage() {
       <Card
         kicker="// Suggested progressions"
         right={
-          topMatch && (
+          (topMatch || singlePc != null) && (
             <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Starting from <span className="text-gold">{topMatch.symbol}</span> in {keyRoot} {SCALES[scaleId].name}
+              Starting from <span className="text-gold">{topMatch ? topMatch.symbol : `${singleNoteName} ${scaleId === "major" ? "" : "min"}`.trim()}</span> in {topMatch ? `${keyRoot} ${SCALES[scaleId].name}` : `${singleNoteName} ${SCALES[scaleId].name}`}
             </span>
           )
         }
       >
-        {!topMatch ? (
+        {progressions.length === 0 ? (
           <p className="font-mono text-xs text-muted-foreground">
-            Play a recognizable chord to see progressions that work with it.
+            Play a note or chord to see progressions that work with it.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
