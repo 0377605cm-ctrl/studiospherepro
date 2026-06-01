@@ -352,6 +352,40 @@ export function playChord(midis: number[], opts: PlayOptions = {}) {
   triggerChordNow(midis, opts, instrument);
 }
 
+/**
+ * Plays a portamento/slide between two MIDI notes using an oscillator with
+ * a frequency ramp. Used for guitar string-slides where sampler-based pitch
+ * bending isn't available.
+ */
+export function playSlide(fromMidi: number, toMidi: number, opts: PlayOptions = {}) {
+  if (typeof window === "undefined") return;
+  void unlockAudio();
+  ensureRunning();
+  try {
+    const ctx = Tone.getContext().rawContext as AudioContext;
+    const { duration = 0.45, velocity = 0.5 } = opts;
+    const fromFreq = 440 * Math.pow(2, (fromMidi - 69) / 12);
+    const toFreq = 440 * Math.pow(2, (toMidi - 69) / 12);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.value = Math.min(8000, Math.max(fromFreq, toFreq) * 5);
+    osc.type = "sawtooth";
+    const now = ctx.currentTime;
+    osc.frequency.setValueAtTime(fromFreq, now);
+    osc.frequency.exponentialRampToValueAtTime(toFreq, now + duration * 0.7);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(velocity, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration + 0.2);
+    osc.connect(filter).connect(gain).connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + duration + 0.25);
+  } catch {
+    // ignore
+  }
+}
+
 /** Back-compat shim: returns Tone's underlying AudioContext. */
 export function getAudioContext(): AudioContext {
   if (typeof window === "undefined") throw new Error("AudioContext only available in browser");
