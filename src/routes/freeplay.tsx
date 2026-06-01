@@ -525,9 +525,41 @@ function FreePlayPage() {
             No chord match for those notes — try adding/removing one.
           </p>
         ) : (
+          <>
+            {/* Inversion / bass-note picker */}
+            {topMatch && inversionChoices.length > 0 && (
+              <div className="mb-4 rounded-lg border border-border/60 bg-secondary/30 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-gold">Bass / Inversion</span>
+                  <button
+                    onClick={() => setBassPc(null)}
+                    className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+                      bassPc == null ? "border-gold bg-gold text-gold-foreground" : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
+                    }`}
+                  >Root</button>
+                  {inversionChoices.slice(1).map((c, i) => (
+                    <button
+                      key={c.pc}
+                      onClick={() => setBassPc(c.pc)}
+                      className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+                        bassPc === c.pc ? "border-gold bg-gold text-gold-foreground" : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
+                      }`}
+                      title={`${c.label} inversion — bass: ${pcName(c.pc)}`}
+                    >
+                      {c.label} · /{pcName(c.pc)}
+                    </button>
+                  ))}
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                    Current voicing: <span className="text-gold">{topMatch.symbol}{bassPc != null && bassPc !== topMatch.rootPc ? `/${pcName(bassPc)}` : ""}</span>
+                  </span>
+                </div>
+              </div>
+            )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {matches.map((m, i) => {
-              const midis = CHORD_FORMULAS[m.type].intervals.map((iv) => 48 + m.rootPc + iv);
+              const useBass = i === 0 ? bassPc : null;
+              const midis = chordMidis(m.rootPc, m.type, useBass);
+              const sym = m.symbol + (useBass != null && useBass !== m.rootPc ? `/${pcName(useBass)}` : "");
               return (
                 <button
                   key={m.symbol + i}
@@ -539,7 +571,7 @@ function FreePlayPage() {
                   <div className="font-mono text-[9px] uppercase tracking-widest text-gold">
                     {i === 0 ? "Best match" : `Match ${i + 1}`}
                   </div>
-                  <div className="mt-1 text-xl font-bold tracking-tight">{m.symbol}</div>
+                  <div className="mt-1 text-xl font-bold tracking-tight">{sym}</div>
                   <div className="mt-1 font-mono text-[10px] text-muted-foreground">
                     {CHORD_FORMULAS[m.type].name}
                   </div>
@@ -556,8 +588,42 @@ function FreePlayPage() {
               );
             })}
           </div>
+          </>
         )}
       </Card>
+
+      {/* Single-note → suggested diatonic chords */}
+      {singlePc !== null && singleNoteChords.length > 0 && (
+        <Card
+          kicker="// Chords from this note"
+          right={
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Diatonic to <span className="text-gold">{singleNoteName} {SCALES[scaleId].name}</span>
+            </span>
+          }
+        >
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Tap a chord to hear it — these are built from the scale rooted on {singleNoteName}.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            {singleNoteChords.map((c, i) => {
+              const midis = chordMidis(c.rootPc, c.type, null);
+              return (
+                <button
+                  key={i}
+                  onClick={() => playChord(midis, { duration: 1.2, type: "triangle" })}
+                  className={`rounded-lg border p-3 text-left transition-all hover:border-gold/60 hover:bg-secondary ${
+                    i === 0 ? "border-gold/60 bg-gold/10" : "border-border bg-secondary/40"
+                  }`}
+                >
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-gold">{c.degree}</div>
+                  <div className="mt-1 text-lg font-bold tracking-tight">{c.symbol}</div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Single-note → suggested scales */}
       {singlePc !== null && (
