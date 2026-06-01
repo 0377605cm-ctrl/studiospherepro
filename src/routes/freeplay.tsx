@@ -14,7 +14,7 @@ import {
   type ChordType,
 } from "@/lib/music/theory";
 import { Fretboard } from "@/components/Fretboard";
-import { playMidi, playChord, unlockAudio } from "@/lib/audio/synth";
+import { playMidi, playChord, playSlide, unlockAudio } from "@/lib/audio/synth";
 import { PageHeader, Card } from "./scales";
 
 export const Route = createFileRoute("/freeplay")({
@@ -43,6 +43,25 @@ const FRET_RANGES = [
 
 const MAX_FRET = 24;
 const DEFAULT_FRET_END = 15;
+
+/* ---------- Voicing / inversion helpers ---------- */
+
+/** Returns chord midi notes around the given base octave, with optional bass pc dropped below. */
+function chordMidis(rootPc: number, type: ChordType, bassPc: number | null, baseOctave = 4): number[] {
+  const base = baseOctave * 12;
+  const intervals = CHORD_FORMULAS[type].intervals;
+  const top = intervals.map((iv) => base + rootPc + iv);
+  if (bassPc == null) return top;
+  const targetPc = ((bassPc % 12) + 12) % 12;
+  const lowest = Math.min(...top);
+  let bass = base + targetPc;
+  while (bass >= lowest) bass -= 12;
+  return [bass, ...top].sort((a, b) => a - b);
+}
+
+function pcName(pc: number): string {
+  return NOTE_NAMES_SHARP[((pc % 12) + 12) % 12];
+}
 
 /* ---------- Chord identification ---------- */
 
@@ -152,6 +171,7 @@ function FreePlayPage() {
   const [view, setView] = useState<View>("piano");
   const [mode, setMode] = useState<PlayMode>("hold");
   const [active, setActive] = useState<Set<number>>(new Set()); // MIDI numbers
+  const [bassPc, setBassPc] = useState<number | null>(null);
   const [keyRoot, setKeyRoot] = useState("C");
   const [scaleId, setScaleId] = useState<ScaleId>("major");
   const [showScaleOverlay, setShowScaleOverlay] = useState(true);
@@ -175,10 +195,32 @@ function FreePlayPage() {
 
   const matches = useMemo(() => identifyChords(activePcs), [activePcs]);
   const topMatch = matches[0];
+  const singlePc = activePcs.length === 1 ? activePcs[0] : null;
+  const singleNoteName = singlePc !== null ? NOTE_NAMES_SHARP[singlePc] : null;
   const progressions = useMemo(
-    () => (topMatch ? suggestProgressions(topMatch.rootPc, topMatch.type, keyRoot, scaleId) : []),
-    [topMatch, keyRoot, scaleId],
+    () => {
+      if (topMatch) return suggestProgressions(topMatch.rootPc, topMatch.type, keyRoot, scaleId);
+      if (singlePc != null) {
+        const isMinor = scaleId === "minor" || scaleId === "harmonic_minor" || scaleId === "melodic_minor";
+        return suggestProgressions(singlePc, isMinor ? "min" : "maj", pcName(singlePc), scaleId);
+      }
+      return [];
+    },
+    [topMatch, keyRoot, scaleId, singlePc],
   );
+
+  // Scale-degree map (pc -> 1..7) and which degrees are present in the detected/active chord
+  const degreeByPc = useMemo(() => {
+    const m = new Map<number, number>();
+    scale.notes.forEach((pc, i) => m.set(pc, i + 1));
+    return m;
+  }, [scale]);
+  const chordPcSet = useMemo(() => {
+    if (topMatch) {
+      return new Set(CHORD_FORMULAS[topMatch.type].intervals.map((iv) => (topMatch.rootPc + iv) % 12));
+    }
+    return new Set(activePcs);
+  }, [topMatch, activePcs]);
 
   const toggleNote = useCallback((midi: number) => {
     void unlockAudio();
@@ -211,11 +253,9 @@ function FreePlayPage() {
     });
   }, [view, mode]);
 
-  const clearNotes = () => setActive(new Set());
+  const clearNotes = () => { setActive(new Set()); setBassPc(null); };
 
   // When exactly one note is held, suggest scales rooted on that pitch class.
-  const singlePc = activePcs.length === 1 ? activePcs[0] : null;
-  const singleNoteName = singlePc !== null ? NOTE_NAMES_SHARP[singlePc] : null;
   const scaleSuggestions = useMemo(() => {
     if (singleNoteName === null) return [];
     const ids: ScaleId[] = [
@@ -232,16 +272,45 @@ function FreePlayPage() {
   const playActive = () => {
     const midis = Array.from(active).sort((a, b) => a - b);
     if (midis.length === 0) return;
-    playChord(midis, { duration: 1.4, type: view === "piano" ? "triangle" : "sawtooth" });
+    // If a bass override is set, rebuild the voicing with that note on the bottom.
+    let voiced = midis;
+    if (bassPc != null) {
+      const target = ((bassPc % 12) + 12) % 12;
+      const lowest = midis[0];
+      let bass = midis.find((m) => ((m % 12) + 12) % 12 === target) ?? (Math.floor(lowest / 12) * 12 + target);
+      while (bass >= lowest) bass -= 12;
+      voiced = [bass, ...midis.filter((m) => m !== bass)].sort((a, b) => a - b);
+    }
+    playChord(voiced, { duration: 1.4, type: view === "piano" ? "triangle" : "sawtooth" });
   };
 
   const playProgression = (prog: ProgressionSuggestion) => {
     void unlockAudio();
     prog.chords.forEach((c, i) => {
-      const midis = CHORD_FORMULAS[c.type].intervals.map((iv) => 48 + c.rootPc + iv);
+      // Honor the inversion only for the first chord (it's the one the user voiced).
+      const useBass = i === 0 ? bassPc : null;
+      const midis = chordMidis(c.rootPc, c.type, useBass);
       setTimeout(() => playChord(midis, { duration: 0.9, type: "triangle" }), i * 750);
     });
   };
+
+  // Chord-tone pitch classes available as inversion bass-note choices.
+  const inversionChoices = useMemo(() => {
+    if (!topMatch) return [];
+    const intervals = CHORD_FORMULAS[topMatch.type].intervals;
+    const names = ["Root", "1st inv", "2nd inv", "3rd inv", "4th inv"];
+    return intervals.map((iv, i) => ({
+      pc: (topMatch.rootPc + iv) % 12,
+      label: names[i] ?? `${i}th inv`,
+    }));
+  }, [topMatch]);
+
+  // Diatonic chord suggestions when only one note is held — based on scale rooted on that note.
+  const singleNoteChords = useMemo(() => {
+    if (singlePc == null || singleNoteName == null) return [];
+    const localScale = buildScale(singleNoteName, scaleId);
+    return diatonicChords(localScale, false).slice(0, 7);
+  }, [singlePc, singleNoteName, scaleId]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
@@ -343,9 +412,11 @@ function FreePlayPage() {
             onToggle={toggleNote}
             scalePcs={showScaleOverlay ? scale.notes : []}
             rootPc={scale.rootPc}
+            degreeByPc={degreeByPc}
+            chordPcs={chordPcSet}
           />
           <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-            Click keys to add/remove them. Gold dot = scale note · Gold key = key root.
+            Click keys to add/remove them (Hold mode) or play once (Tap mode). Scale-degree numbers (1–7) appear on scale notes; degrees in the detected chord are ringed in gold.
           </p>
         </Card>
       ) : (
@@ -417,9 +488,17 @@ function FreePlayPage() {
             scalePcs={showScaleOverlay ? scale.notes : undefined}
             height={220}
           />
-          <FretClickGrid active={active} onToggle={toggleNote} startFret={fretStart} endFret={fretEnd} />
+          <FretClickGrid
+            active={active}
+            onToggle={toggleNote}
+            onSlide={(from, to) => playSlide(from, to)}
+            startFret={fretStart}
+            endFret={fretEnd}
+            degreeByPc={degreeByPc}
+            chordPcs={chordPcSet}
+          />
           <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-            Tap any cell below to toggle that fret. Use the buttons or slider to move the playable window across the neck.
+            Tap a cell to toggle that fret. <span className="text-gold">Drag from one fret to another on the same string</span> to hear a slide. Degree numbers (1–7) appear on scale notes; chord-tone degrees are ringed in gold.
           </p>
         </Card>
       )}
@@ -443,9 +522,41 @@ function FreePlayPage() {
             No chord match for those notes — try adding/removing one.
           </p>
         ) : (
+          <>
+            {/* Inversion / bass-note picker */}
+            {topMatch && inversionChoices.length > 0 && (
+              <div className="mb-4 rounded-lg border border-border/60 bg-secondary/30 p-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-mono text-[10px] uppercase tracking-widest text-gold">Bass / Inversion</span>
+                  <button
+                    onClick={() => setBassPc(null)}
+                    className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+                      bassPc == null ? "border-gold bg-gold text-gold-foreground" : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
+                    }`}
+                  >Root</button>
+                  {inversionChoices.slice(1).map((c, i) => (
+                    <button
+                      key={c.pc}
+                      onClick={() => setBassPc(c.pc)}
+                      className={`rounded border px-2 py-1 font-mono text-[10px] uppercase tracking-widest ${
+                        bassPc === c.pc ? "border-gold bg-gold text-gold-foreground" : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
+                      }`}
+                      title={`${c.label} inversion — bass: ${pcName(c.pc)}`}
+                    >
+                      {c.label} · /{pcName(c.pc)}
+                    </button>
+                  ))}
+                  <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+                    Current voicing: <span className="text-gold">{topMatch.symbol}{bassPc != null && bassPc !== topMatch.rootPc ? `/${pcName(bassPc)}` : ""}</span>
+                  </span>
+                </div>
+              </div>
+            )}
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {matches.map((m, i) => {
-              const midis = CHORD_FORMULAS[m.type].intervals.map((iv) => 48 + m.rootPc + iv);
+              const useBass = i === 0 ? bassPc : null;
+              const midis = chordMidis(m.rootPc, m.type, useBass);
+              const sym = m.symbol + (useBass != null && useBass !== m.rootPc ? `/${pcName(useBass)}` : "");
               return (
                 <button
                   key={m.symbol + i}
@@ -457,7 +568,7 @@ function FreePlayPage() {
                   <div className="font-mono text-[9px] uppercase tracking-widest text-gold">
                     {i === 0 ? "Best match" : `Match ${i + 1}`}
                   </div>
-                  <div className="mt-1 text-xl font-bold tracking-tight">{m.symbol}</div>
+                  <div className="mt-1 text-xl font-bold tracking-tight">{sym}</div>
                   <div className="mt-1 font-mono text-[10px] text-muted-foreground">
                     {CHORD_FORMULAS[m.type].name}
                   </div>
@@ -474,8 +585,42 @@ function FreePlayPage() {
               );
             })}
           </div>
+          </>
         )}
       </Card>
+
+      {/* Single-note → suggested diatonic chords */}
+      {singlePc !== null && singleNoteChords.length > 0 && (
+        <Card
+          kicker="// Chords from this note"
+          right={
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Diatonic to <span className="text-gold">{singleNoteName} {SCALES[scaleId].name}</span>
+            </span>
+          }
+        >
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Tap a chord to hear it — these are built from the scale rooted on {singleNoteName}.
+          </p>
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+            {singleNoteChords.map((c, i) => {
+              const midis = chordMidis(c.rootPc, c.type, null);
+              return (
+                <button
+                  key={i}
+                  onClick={() => playChord(midis, { duration: 1.2, type: "triangle" })}
+                  className={`rounded-lg border p-3 text-left transition-all hover:border-gold/60 hover:bg-secondary ${
+                    i === 0 ? "border-gold/60 bg-gold/10" : "border-border bg-secondary/40"
+                  }`}
+                >
+                  <div className="font-mono text-[9px] uppercase tracking-widest text-gold">{c.degree}</div>
+                  <div className="mt-1 text-lg font-bold tracking-tight">{c.symbol}</div>
+                </button>
+              );
+            })}
+          </div>
+        </Card>
+      )}
 
       {/* Single-note → suggested scales */}
       {singlePc !== null && (
@@ -527,16 +672,16 @@ function FreePlayPage() {
       <Card
         kicker="// Suggested progressions"
         right={
-          topMatch && (
+          (topMatch || singlePc != null) && (
             <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Starting from <span className="text-gold">{topMatch.symbol}</span> in {keyRoot} {SCALES[scaleId].name}
+              Starting from <span className="text-gold">{topMatch ? topMatch.symbol : `${singleNoteName} ${scaleId === "major" ? "" : "min"}`.trim()}</span> in {topMatch ? `${keyRoot} ${SCALES[scaleId].name}` : `${singleNoteName} ${SCALES[scaleId].name}`}
             </span>
           )
         }
       >
-        {!topMatch ? (
+        {progressions.length === 0 ? (
           <p className="font-mono text-xs text-muted-foreground">
-            Play a recognizable chord to see progressions that work with it.
+            Play a note or chord to see progressions that work with it.
           </p>
         ) : (
           <div className="grid gap-3 sm:grid-cols-2">
@@ -581,11 +726,15 @@ function FreePlayPiano({
   onToggle,
   scalePcs,
   rootPc,
+  degreeByPc,
+  chordPcs,
 }: {
   active: Set<number>;
   onToggle: (midi: number) => void;
   scalePcs: number[];
   rootPc: number;
+  degreeByPc: Map<number, number>;
+  chordPcs: Set<number>;
 }) {
   const START_MIDI = 36; // C2
   const OCTAVES = 5; // C2..C7
@@ -614,12 +763,16 @@ function FreePlayPiano({
             const isActive = active.has(k.midi);
             const inScale = scalePcs.includes(k.pc);
             const isRoot = k.pc === rootPc;
+            const degree = degreeByPc.get(k.pc);
+            const inChord = chordPcs.has(k.pc);
             return (
               <button
                 key={k.midi}
                 onClick={() => onToggle(k.midi)}
                 style={{ width: `${100 / total}%` }}
                 className={`group relative flex flex-col-reverse items-center rounded-b-md border-l border-border/40 first:border-l-0 transition-all active:translate-y-px ${
+                  inChord && inScale && !isActive ? "ring-2 ring-inset ring-gold/70 " : ""
+                }${
                   isActive
                     ? "bg-gradient-to-b from-gold to-gold/60"
                     : isRoot
@@ -629,6 +782,13 @@ function FreePlayPiano({
                     : "bg-gradient-to-b from-zinc-100 to-zinc-300 hover:from-white"
                 }`}
               >
+                {degree != null && (
+                  <span className={`absolute top-1 left-1 rounded px-1 font-mono text-[8px] font-bold ${
+                    inChord ? "bg-gold text-gold-foreground" : "bg-gold/30 text-zinc-800"
+                  }`}>
+                    {degree}
+                  </span>
+                )}
                 <span className={`mb-2 font-mono text-[8px] uppercase ${isActive ? "text-gold-foreground" : "text-zinc-500"}`}>
                   {NOTE_NAMES_SHARP[k.pc]}
                   {Math.floor(k.midi / 12) - 1}
@@ -640,6 +800,8 @@ function FreePlayPiano({
             const isActive = active.has(k.midi);
             const inScale = scalePcs.includes(k.pc);
             const isRoot = k.pc === rootPc;
+            const inChord = chordPcs.has(k.pc);
+            const degree = degreeByPc.get(k.pc);
             const left = ((k.idx + 1) / total) * 100;
             const widthPct = (100 / total) * 0.6;
             return (
@@ -648,6 +810,8 @@ function FreePlayPiano({
                 onClick={() => onToggle(k.midi)}
                 style={{ left: `calc(${left}% - ${widthPct / 2}%)`, width: `${widthPct}%` }}
                 className={`absolute top-0 h-28 rounded-b-md border border-black/60 transition-all active:translate-y-px ${
+                  inChord && inScale && !isActive ? "ring-2 ring-inset ring-gold " : ""
+                }${
                   isActive
                     ? "bg-gradient-to-b from-gold to-gold/70 shadow-[0_0_18px_oklch(0.78_0.13_85_/_0.7)]"
                     : isRoot
@@ -656,7 +820,13 @@ function FreePlayPiano({
                     ? "bg-gradient-to-b from-gold/40 to-zinc-900"
                     : "bg-gradient-to-b from-zinc-900 to-black"
                 }`}
-              />
+              >
+                {degree != null && (
+                  <span className="absolute top-1 left-1/2 -translate-x-1/2 rounded px-1 font-mono text-[8px] font-bold bg-gold/80 text-gold-foreground">
+                    {degree}
+                  </span>
+                )}
+              </button>
             );
           })}
         </div>
@@ -670,17 +840,28 @@ function FreePlayPiano({
 function FretClickGrid({
   active,
   onToggle,
+  onSlide,
   startFret,
   endFret,
+  degreeByPc,
+  chordPcs,
 }: {
   active: Set<number>;
   onToggle: (midi: number) => void;
+  onSlide?: (fromMidi: number, toMidi: number) => void;
   startFret: number;
   endFret: number;
+  degreeByPc: Map<number, number>;
+  chordPcs: Set<number>;
 }) {
   const STRINGS = [0, 1, 2, 3, 4, 5]; // low E .. high E
   const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
   const FRETS = Array.from({ length: endFret - startFret + 1 }, (_, i) => startFret + i);
+
+  // Track pointer-down origin so we can detect a slide on release.
+  const slideStart = (typeof window !== "undefined" ? (window as unknown as { __fpSlide?: { s: number; f: number; midi: number } }) : {}) as {
+    __fpSlide?: { s: number; f: number; midi: number };
+  };
 
   return (
     <div className="mt-4 overflow-x-auto rounded-lg border border-border/60 bg-card/30 p-2">
@@ -701,18 +882,45 @@ function FretClickGrid({
                 const midi = STANDARD_TUNING_MIDI[s] + f;
                 const isActive = active.has(midi);
                 const pc = ((midi % 12) + 12) % 12;
+                const degree = degreeByPc.get(pc);
+                const inChord = chordPcs.has(pc);
                 return (
                   <td key={f} className="p-0">
                     <button
-                      onClick={() => onToggle(midi)}
-                      className={`m-0.5 h-7 w-full min-w-[28px] rounded border text-[9px] transition-colors ${
+                      onPointerDown={(e) => {
+                        (e.currentTarget as HTMLButtonElement).setPointerCapture?.(e.pointerId);
+                        slideStart.__fpSlide = { s, f, midi };
+                      }}
+                      onPointerUp={(e) => {
+                        const origin = slideStart.__fpSlide;
+                        slideStart.__fpSlide = undefined;
+                        // If user released over a different fret on the same string, treat as slide
+                        const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+                        const targetMidi = el?.dataset?.midi ? Number(el.dataset.midi) : midi;
+                        const targetStr = el?.dataset?.str ? Number(el.dataset.str) : s;
+                        if (origin && targetStr === origin.s && targetMidi !== origin.midi && onSlide) {
+                          onSlide(origin.midi, targetMidi);
+                          return;
+                        }
+                        onToggle(midi);
+                      }}
+                      data-midi={midi}
+                      data-str={s}
+                      className={`relative m-0.5 h-7 w-full min-w-[28px] rounded border text-[9px] transition-colors ${
+                        inChord && !isActive ? "ring-1 ring-inset ring-gold/70 " : ""
+                      }${
                         isActive
                           ? "border-gold bg-gold text-gold-foreground"
                           : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
                       }`}
-                      title={`String ${s + 1}, fret ${f} (${NOTE_NAMES_SHARP[pc]})`}
+                      title={`String ${s + 1}, fret ${f} (${NOTE_NAMES_SHARP[pc]})${degree ? " · degree " + degree : ""} — tap to toggle, drag to another fret on this string to slide`}
                     >
                       {NOTE_NAMES_SHARP[pc]}
+                      {degree != null && (
+                        <span className="absolute -top-1 -right-1 rounded bg-gold px-1 text-[8px] font-bold text-gold-foreground">
+                          {degree}
+                        </span>
+                      )}
                     </button>
                   </td>
                 );
@@ -721,6 +929,9 @@ function FretClickGrid({
           ))}
         </tbody>
       </table>
+      <p className="mt-1 px-1 font-mono text-[9px] text-muted-foreground">
+        Drag from one fret to another on the same string to play a slide between those notes.
+      </p>
     </div>
   );
 }
