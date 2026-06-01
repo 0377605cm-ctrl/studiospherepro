@@ -26,6 +26,13 @@ let guitarReady = false;
 let unlocked = false;
 let unlockPromise: Promise<void> | null = null;
 
+// iOS keep-alive — prevents AudioContext from being suspended after a few
+// minutes of inactivity, especially on iPad without headphones plugged in.
+let keepAliveAudio: HTMLAudioElement | null = null;
+let keepAliveTimer: number | null = null;
+let keepAliveOsc: OscillatorNode | null = null;
+let keepAliveListenersAttached = false;
+
 function setPlaybackAudioSession() {
   if (typeof navigator === "undefined") return;
   const nav = navigator as Navigator & {
@@ -49,6 +56,89 @@ function warmupSpeakerOutput(ctx: AudioContext) {
   source.connect(gain).connect(ctx.destination);
   source.start(0);
   source.stop(ctx.currentTime + 0.01);
+}
+
+/**
+ * Ensures the AudioContext is running. Browsers (especially iOS Safari) will
+ * suspend the context after backgrounding or long inactivity. Call this from
+ * inside a user gesture before triggering any sound.
+ */
+function ensureRunning() {
+  try {
+    const ctx = Tone.getContext().rawContext as AudioContext;
+    if (ctx.state !== "running") {
+      void ctx.resume().catch(() => undefined);
+    }
+    if (keepAliveAudio && keepAliveAudio.paused) {
+      void keepAliveAudio.play().catch(() => undefined);
+    }
+  } catch {
+    // ignore
+  }
+}
+
+/**
+ * Starts a near-silent background tone + silent <audio> element so iOS
+ * keeps the audio session alive. Also attaches listeners that re-resume
+ * the context whenever the page regains focus or the user touches the screen.
+ */
+function startKeepAlive() {
+  if (typeof window === "undefined") return;
+  const ctx = Tone.getContext().rawContext as AudioContext;
+
+  // 1) Inaudible oscillator routed into the destination — keeps the
+  //    AudioContext "active" from the browser's point of view.
+  if (!keepAliveOsc) {
+    try {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      gain.gain.value = 0.0001; // effectively silent
+      osc.frequency.value = 20; // below hearing range
+      osc.connect(gain).connect(ctx.destination);
+      osc.start();
+      keepAliveOsc = osc;
+    } catch {
+      // ignore
+    }
+  }
+
+  // 2) Silent looping <audio> — required on iOS so the system treats the
+  //    page as "playing media" and doesn't kill the session.
+  if (!keepAliveAudio) {
+    // 1-frame silent WAV
+    const silence =
+      "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=";
+    const el = new Audio(silence);
+    el.loop = true;
+    el.volume = 0.001;
+    el.muted = false;
+    (el as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+    el.setAttribute("playsinline", "");
+    el.setAttribute("webkit-playsinline", "true");
+    keepAliveAudio = el;
+    void el.play().catch(() => undefined);
+  } else if (keepAliveAudio.paused) {
+    void keepAliveAudio.play().catch(() => undefined);
+  }
+
+  // 3) Poll the context state; if anything suspends it, resume.
+  if (keepAliveTimer == null) {
+    keepAliveTimer = window.setInterval(() => {
+      ensureRunning();
+    }, 2000);
+  }
+
+  // 4) Resume on user-visible events.
+  if (!keepAliveListenersAttached) {
+    const resume = () => ensureRunning();
+    document.addEventListener("visibilitychange", resume);
+    window.addEventListener("focus", resume);
+    window.addEventListener("pageshow", resume);
+    window.addEventListener("touchstart", resume, { passive: true });
+    window.addEventListener("touchend", resume, { passive: true });
+    window.addEventListener("pointerdown", resume, { passive: true });
+    keepAliveListenersAttached = true;
+  }
 }
 
 // Per-instrument volume nodes so users can mix piano vs guitar independently.
@@ -153,6 +243,7 @@ export async function unlockAudio() {
       ensurePiano();
       ensureGuitar();
       unlocked = true;
+      startKeepAlive();
       emit();
     })().finally(() => {
       unlockPromise = null;
@@ -189,6 +280,7 @@ function fallbackBeep(midi: number, opts: PlayOptions, instrument: Instrument) {
 }
 
 function triggerMidiNow(midi: number, opts: PlayOptions, instrument: Instrument) {
+  ensureRunning();
   const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
   const ready = instrument === "piano" ? pianoReady : guitarReady;
   const { duration = 0.6, velocity = 0.8 } = opts;
@@ -205,6 +297,7 @@ function triggerMidiNow(midi: number, opts: PlayOptions, instrument: Instrument)
 }
 
 function triggerChordNow(midis: number[], opts: PlayOptions, instrument: Instrument) {
+  ensureRunning();
   const sampler = instrument === "piano" ? ensurePiano() : ensureGuitar();
   const ready = instrument === "piano" ? pianoReady : guitarReady;
   const { duration = 1, velocity = 0.7 } = opts;
