@@ -199,17 +199,18 @@ function FreePlayPage() {
 
   const matches = useMemo(() => identifyChords(activePcs), [activePcs]);
   const topMatch = matches[0];
+  const singlePc = activePcs.length === 1 ? activePcs[0] : null;
+  const singleNoteName = singlePc !== null ? NOTE_NAMES_SHARP[singlePc] : null;
   const progressions = useMemo(
     () => {
       if (topMatch) return suggestProgressions(topMatch.rootPc, topMatch.type, keyRoot, scaleId);
-      // Fall back to single-note → progressions in scale rooted on that note
-      if (singlePcEarly != null) {
+      if (singlePc != null) {
         const isMinor = scaleId === "minor" || scaleId === "harmonic_minor" || scaleId === "melodic_minor";
-        return suggestProgressions(singlePcEarly, isMinor ? "min" : "maj", pcName(singlePcEarly), scaleId);
+        return suggestProgressions(singlePc, isMinor ? "min" : "maj", pcName(singlePc), scaleId);
       }
       return [];
     },
-    [topMatch, keyRoot, scaleId, activePcs],
+    [topMatch, keyRoot, scaleId, singlePc],
   );
 
   // Scale-degree map (pc -> 1..7) and which degrees are present in the detected/active chord
@@ -259,8 +260,6 @@ function FreePlayPage() {
   const clearNotes = () => setActive(new Set());
 
   // When exactly one note is held, suggest scales rooted on that pitch class.
-  const singlePc = activePcs.length === 1 ? activePcs[0] : null;
-  const singleNoteName = singlePc !== null ? NOTE_NAMES_SHARP[singlePc] : null;
   const scaleSuggestions = useMemo(() => {
     if (singleNoteName === null) return [];
     const ids: ScaleId[] = [
