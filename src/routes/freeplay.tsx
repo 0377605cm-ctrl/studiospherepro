@@ -53,14 +53,10 @@ function chordMidis(rootPc: number, type: ChordType, bassPc: number | null, base
   const top = intervals.map((iv) => base + rootPc + iv);
   if (bassPc == null) return top;
   const targetPc = ((bassPc % 12) + 12) % 12;
-  // Drop the matching pitch class down to sit below the rest.
   const lowest = Math.min(...top);
-  let bass = top.find((m) => ((m % 12) + 12) % 12 === targetPc);
-  if (bass == null) bass = base + targetPc; // tone not in chord (slash chord)
+  let bass = base + targetPc;
   while (bass >= lowest) bass -= 12;
-  // Remove the chord-tone duplicate if we used one
-  const withoutDup = top.filter((m) => m !== (bass! + 12 * Math.round((m - bass!) / 12)) || ((m % 12) + 12) % 12 !== targetPc);
-  return [bass, ...withoutDup].sort((a, b) => a - b);
+  return [bass, ...top].sort((a, b) => a - b);
 }
 
 function pcName(pc: number): string {
