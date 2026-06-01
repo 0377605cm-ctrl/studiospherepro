@@ -14,7 +14,7 @@ import {
   type ChordType,
 } from "@/lib/music/theory";
 import { Fretboard } from "@/components/Fretboard";
-import { playMidi, playChord, unlockAudio } from "@/lib/audio/synth";
+import { playMidi, playChord, playSlide, unlockAudio } from "@/lib/audio/synth";
 import { PageHeader, Card } from "./scales";
 
 export const Route = createFileRoute("/freeplay")({
@@ -43,6 +43,29 @@ const FRET_RANGES = [
 
 const MAX_FRET = 24;
 const DEFAULT_FRET_END = 15;
+
+/* ---------- Voicing / inversion helpers ---------- */
+
+/** Returns chord midi notes around the given base octave, with optional bass pc dropped below. */
+function chordMidis(rootPc: number, type: ChordType, bassPc: number | null, baseOctave = 4): number[] {
+  const base = baseOctave * 12;
+  const intervals = CHORD_FORMULAS[type].intervals;
+  const top = intervals.map((iv) => base + rootPc + iv);
+  if (bassPc == null) return top;
+  const targetPc = ((bassPc % 12) + 12) % 12;
+  // Drop the matching pitch class down to sit below the rest.
+  const lowest = Math.min(...top);
+  let bass = top.find((m) => ((m % 12) + 12) % 12 === targetPc);
+  if (bass == null) bass = base + targetPc; // tone not in chord (slash chord)
+  while (bass >= lowest) bass -= 12;
+  // Remove the chord-tone duplicate if we used one
+  const withoutDup = top.filter((m) => m !== (bass! + 12 * Math.round((m - bass!) / 12)) || ((m % 12) + 12) % 12 !== targetPc);
+  return [bass, ...withoutDup].sort((a, b) => a - b);
+}
+
+function pcName(pc: number): string {
+  return NOTE_NAMES_SHARP[((pc % 12) + 12) % 12];
+}
 
 /* ---------- Chord identification ---------- */
 
