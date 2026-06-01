@@ -257,7 +257,7 @@ function FreePlayPage() {
     });
   }, [view, mode]);
 
-  const clearNotes = () => setActive(new Set());
+  const clearNotes = () => { setActive(new Set()); setBassPc(null); };
 
   // When exactly one note is held, suggest scales rooted on that pitch class.
   const scaleSuggestions = useMemo(() => {
@@ -276,16 +276,44 @@ function FreePlayPage() {
   const playActive = () => {
     const midis = Array.from(active).sort((a, b) => a - b);
     if (midis.length === 0) return;
-    playChord(midis, { duration: 1.4, type: view === "piano" ? "triangle" : "sawtooth" });
+    // If a bass override is set, rebuild the voicing with that note on the bottom.
+    let voiced = midis;
+    if (bassPc != null) {
+      const target = ((bassPc % 12) + 12) % 12;
+      const lowest = midis[0];
+      let bass = midis.find((m) => ((m % 12) + 12) % 12 === target) ?? (Math.floor(lowest / 12) * 12 + target);
+      while (bass >= lowest) bass -= 12;
+      voiced = [bass, ...midis.filter((m) => m !== bass)].sort((a, b) => a - b);
+    }
+    playChord(voiced, { duration: 1.4, type: view === "piano" ? "triangle" : "sawtooth" });
   };
 
   const playProgression = (prog: ProgressionSuggestion) => {
     void unlockAudio();
     prog.chords.forEach((c, i) => {
-      const midis = CHORD_FORMULAS[c.type].intervals.map((iv) => 48 + c.rootPc + iv);
+      // Honor the inversion only for the first chord (it's the one the user voiced).
+      const useBass = i === 0 ? bassPc : null;
+      const midis = chordMidis(c.rootPc, c.type, useBass);
       setTimeout(() => playChord(midis, { duration: 0.9, type: "triangle" }), i * 750);
     });
   };
+
+  // Chord-tone pitch classes available as inversion bass-note choices.
+  const inversionChoices = useMemo(() => {
+    if (!topMatch) return [];
+    const intervals = CHORD_FORMULAS[topMatch.type].intervals;
+    return intervals.map((iv, i) => ({
+      pc: (topMatch.rootPc + iv) % 12,
+      label: i === 0 ? "Root" : i === 1 ? "1st" : i === 2 ? "2nd" : `${i}rd`,
+    }));
+  }, [topMatch]);
+
+  // Diatonic chord suggestions when only one note is held — based on scale rooted on that note.
+  const singleNoteChords = useMemo(() => {
+    if (singlePc == null || singleNoteName == null) return [];
+    const localScale = buildScale(singleNoteName, scaleId);
+    return diatonicChords(localScale, false).slice(0, 7);
+  }, [singlePc, singleNoteName, scaleId]);
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
