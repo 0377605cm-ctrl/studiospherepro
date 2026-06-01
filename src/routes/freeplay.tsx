@@ -175,6 +175,7 @@ function FreePlayPage() {
   const [view, setView] = useState<View>("piano");
   const [mode, setMode] = useState<PlayMode>("hold");
   const [active, setActive] = useState<Set<number>>(new Set()); // MIDI numbers
+  const [bassPc, setBassPc] = useState<number | null>(null);
   const [keyRoot, setKeyRoot] = useState("C");
   const [scaleId, setScaleId] = useState<ScaleId>("major");
   const [showScaleOverlay, setShowScaleOverlay] = useState(true);
@@ -199,9 +200,30 @@ function FreePlayPage() {
   const matches = useMemo(() => identifyChords(activePcs), [activePcs]);
   const topMatch = matches[0];
   const progressions = useMemo(
-    () => (topMatch ? suggestProgressions(topMatch.rootPc, topMatch.type, keyRoot, scaleId) : []),
-    [topMatch, keyRoot, scaleId],
+    () => {
+      if (topMatch) return suggestProgressions(topMatch.rootPc, topMatch.type, keyRoot, scaleId);
+      // Fall back to single-note → progressions in scale rooted on that note
+      if (singlePcEarly != null) {
+        const isMinor = scaleId === "minor" || scaleId === "harmonic_minor" || scaleId === "melodic_minor";
+        return suggestProgressions(singlePcEarly, isMinor ? "min" : "maj", pcName(singlePcEarly), scaleId);
+      }
+      return [];
+    },
+    [topMatch, keyRoot, scaleId, activePcs],
   );
+
+  // Scale-degree map (pc -> 1..7) and which degrees are present in the detected/active chord
+  const degreeByPc = useMemo(() => {
+    const m = new Map<number, number>();
+    scale.notes.forEach((pc, i) => m.set(pc, i + 1));
+    return m;
+  }, [scale]);
+  const chordPcSet = useMemo(() => {
+    if (topMatch) {
+      return new Set(CHORD_FORMULAS[topMatch.type].intervals.map((iv) => (topMatch.rootPc + iv) % 12));
+    }
+    return new Set(activePcs);
+  }, [topMatch, activePcs]);
 
   const toggleNote = useCallback((midi: number) => {
     void unlockAudio();
