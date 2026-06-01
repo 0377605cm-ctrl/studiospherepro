@@ -298,9 +298,10 @@ function FreePlayPage() {
   const inversionChoices = useMemo(() => {
     if (!topMatch) return [];
     const intervals = CHORD_FORMULAS[topMatch.type].intervals;
+    const names = ["Root", "1st inv", "2nd inv", "3rd inv", "4th inv"];
     return intervals.map((iv, i) => ({
       pc: (topMatch.rootPc + iv) % 12,
-      label: i === 0 ? "Root" : i === 1 ? "1st" : i === 2 ? "2nd" : `${i}rd`,
+      label: names[i] ?? `${i}th inv`,
     }));
   }, [topMatch]);
 
