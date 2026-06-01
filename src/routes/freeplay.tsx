@@ -843,17 +843,28 @@ function FreePlayPiano({
 function FretClickGrid({
   active,
   onToggle,
+  onSlide,
   startFret,
   endFret,
+  degreeByPc,
+  chordPcs,
 }: {
   active: Set<number>;
   onToggle: (midi: number) => void;
+  onSlide?: (fromMidi: number, toMidi: number) => void;
   startFret: number;
   endFret: number;
+  degreeByPc: Map<number, number>;
+  chordPcs: Set<number>;
 }) {
   const STRINGS = [0, 1, 2, 3, 4, 5]; // low E .. high E
   const STRING_LABELS = ["E", "A", "D", "G", "B", "e"];
   const FRETS = Array.from({ length: endFret - startFret + 1 }, (_, i) => startFret + i);
+
+  // Track pointer-down origin so we can detect a slide on release.
+  const slideStart = (typeof window !== "undefined" ? (window as unknown as { __fpSlide?: { s: number; f: number; midi: number } }) : {}) as {
+    __fpSlide?: { s: number; f: number; midi: number };
+  };
 
   return (
     <div className="mt-4 overflow-x-auto rounded-lg border border-border/60 bg-card/30 p-2">
@@ -874,18 +885,45 @@ function FretClickGrid({
                 const midi = STANDARD_TUNING_MIDI[s] + f;
                 const isActive = active.has(midi);
                 const pc = ((midi % 12) + 12) % 12;
+                const degree = degreeByPc.get(pc);
+                const inChord = chordPcs.has(pc);
                 return (
                   <td key={f} className="p-0">
                     <button
-                      onClick={() => onToggle(midi)}
-                      className={`m-0.5 h-7 w-full min-w-[28px] rounded border text-[9px] transition-colors ${
+                      onPointerDown={(e) => {
+                        (e.currentTarget as HTMLButtonElement).setPointerCapture?.(e.pointerId);
+                        slideStart.__fpSlide = { s, f, midi };
+                      }}
+                      onPointerUp={(e) => {
+                        const origin = slideStart.__fpSlide;
+                        slideStart.__fpSlide = undefined;
+                        // If user released over a different fret on the same string, treat as slide
+                        const el = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
+                        const targetMidi = el?.dataset?.midi ? Number(el.dataset.midi) : midi;
+                        const targetStr = el?.dataset?.str ? Number(el.dataset.str) : s;
+                        if (origin && targetStr === origin.s && targetMidi !== origin.midi && onSlide) {
+                          onSlide(origin.midi, targetMidi);
+                          return;
+                        }
+                        onToggle(midi);
+                      }}
+                      data-midi={midi}
+                      data-str={s}
+                      className={`relative m-0.5 h-7 w-full min-w-[28px] rounded border text-[9px] transition-colors ${
+                        inChord && !isActive ? "ring-1 ring-inset ring-gold/70 " : ""
+                      }${
                         isActive
                           ? "border-gold bg-gold text-gold-foreground"
                           : "border-border bg-secondary/40 text-muted-foreground hover:border-gold/50 hover:text-gold"
                       }`}
-                      title={`String ${s + 1}, fret ${f} (${NOTE_NAMES_SHARP[pc]})`}
+                      title={`String ${s + 1}, fret ${f} (${NOTE_NAMES_SHARP[pc]})${degree ? " · degree " + degree : ""} — tap to toggle, drag to another fret on this string to slide`}
                     >
                       {NOTE_NAMES_SHARP[pc]}
+                      {degree != null && (
+                        <span className="absolute -top-1 -right-1 rounded bg-gold px-1 text-[8px] font-bold text-gold-foreground">
+                          {degree}
+                        </span>
+                      )}
                     </button>
                   </td>
                 );
@@ -894,6 +932,9 @@ function FretClickGrid({
           ))}
         </tbody>
       </table>
+      <p className="mt-1 px-1 font-mono text-[9px] text-muted-foreground">
+        Drag from one fret to another on the same string to play a slide between those notes.
+      </p>
     </div>
   );
 }
