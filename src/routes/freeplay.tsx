@@ -729,11 +729,15 @@ function FreePlayPiano({
   onToggle,
   scalePcs,
   rootPc,
+  degreeByPc,
+  chordPcs,
 }: {
   active: Set<number>;
   onToggle: (midi: number) => void;
   scalePcs: number[];
   rootPc: number;
+  degreeByPc: Map<number, number>;
+  chordPcs: Set<number>;
 }) {
   const START_MIDI = 36; // C2
   const OCTAVES = 5; // C2..C7
@@ -762,12 +766,16 @@ function FreePlayPiano({
             const isActive = active.has(k.midi);
             const inScale = scalePcs.includes(k.pc);
             const isRoot = k.pc === rootPc;
+            const degree = degreeByPc.get(k.pc);
+            const inChord = chordPcs.has(k.pc);
             return (
               <button
                 key={k.midi}
                 onClick={() => onToggle(k.midi)}
                 style={{ width: `${100 / total}%` }}
                 className={`group relative flex flex-col-reverse items-center rounded-b-md border-l border-border/40 first:border-l-0 transition-all active:translate-y-px ${
+                  inChord && inScale && !isActive ? "ring-2 ring-inset ring-gold/70 " : ""
+                }${
                   isActive
                     ? "bg-gradient-to-b from-gold to-gold/60"
                     : isRoot
@@ -777,6 +785,13 @@ function FreePlayPiano({
                     : "bg-gradient-to-b from-zinc-100 to-zinc-300 hover:from-white"
                 }`}
               >
+                {degree != null && (
+                  <span className={`absolute top-1 left-1 rounded px-1 font-mono text-[8px] font-bold ${
+                    inChord ? "bg-gold text-gold-foreground" : "bg-gold/30 text-zinc-800"
+                  }`}>
+                    {degree}
+                  </span>
+                )}
                 <span className={`mb-2 font-mono text-[8px] uppercase ${isActive ? "text-gold-foreground" : "text-zinc-500"}`}>
                   {NOTE_NAMES_SHARP[k.pc]}
                   {Math.floor(k.midi / 12) - 1}
@@ -788,6 +803,8 @@ function FreePlayPiano({
             const isActive = active.has(k.midi);
             const inScale = scalePcs.includes(k.pc);
             const isRoot = k.pc === rootPc;
+            const inChord = chordPcs.has(k.pc);
+            const degree = degreeByPc.get(k.pc);
             const left = ((k.idx + 1) / total) * 100;
             const widthPct = (100 / total) * 0.6;
             return (
@@ -796,6 +813,8 @@ function FreePlayPiano({
                 onClick={() => onToggle(k.midi)}
                 style={{ left: `calc(${left}% - ${widthPct / 2}%)`, width: `${widthPct}%` }}
                 className={`absolute top-0 h-28 rounded-b-md border border-black/60 transition-all active:translate-y-px ${
+                  inChord && inScale && !isActive ? "ring-2 ring-inset ring-gold " : ""
+                }${
                   isActive
                     ? "bg-gradient-to-b from-gold to-gold/70 shadow-[0_0_18px_oklch(0.78_0.13_85_/_0.7)]"
                     : isRoot
@@ -804,7 +823,13 @@ function FreePlayPiano({
                     ? "bg-gradient-to-b from-gold/40 to-zinc-900"
                     : "bg-gradient-to-b from-zinc-900 to-black"
                 }`}
-              />
+              >
+                {degree != null && (
+                  <span className="absolute top-1 left-1/2 -translate-x-1/2 rounded px-1 font-mono text-[8px] font-bold bg-gold/80 text-gold-foreground">
+                    {degree}
+                  </span>
+                )}
+              </button>
             );
           })}
         </div>
