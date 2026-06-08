@@ -337,7 +337,7 @@ function FreePlayPage() {
     return (isMinorKey ? minor : major)[deg] ?? "?";
   };
   const slotChord = (s: { deg: number; type: ChordType | null }) => {
-    const dia = keyDiatonic[s.deg];
+    const dia = keyDiatonic[s.deg % keyDiatonic.length];
     const type = s.type ?? dia.type;
     const rootPc = dia.rootPc;
     const symbol = pcName(rootPc) + CHORD_FORMULAS[type].suffix;
