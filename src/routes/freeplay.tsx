@@ -124,6 +124,7 @@ function identifyChords(activePcs: number[]): ChordMatch[] {
 interface ProgressionSuggestion {
   name: string;
   chords: { symbol: string; type: ChordType; rootPc: number }[];
+  genre: string;
 }
 
 function suggestProgressions(rootPc: number, type: ChordType, keyRoot: string, scaleId: ScaleId): ProgressionSuggestion[] {
@@ -161,9 +162,21 @@ function suggestProgressions(rootPc: number, type: ChordType, keyRoot: string, s
       const c = dia[d % dia.length];
       return { symbol: c.symbol, type: c.type, rootPc: c.rootPc };
     });
-    return { name: tpl.name, chords };
+    return { name: tpl.name, chords, genre: PROGRESSION_GENRES[tpl.name] ?? "Versatile" };
   });
 }
+
+/** Common genre association for each named progression template. */
+const PROGRESSION_GENRES: Record<string, string> = {
+  "I – V – vi – IV": "Pop / rock anthems (the “4-chord song”)",
+  "ii – V – I": "Jazz standards / bebop turnarounds",
+  "I – vi – IV – V": "50s doo-wop, classic R&B, pop ballads",
+  "vi – IV – I – V": "Modern pop, EDM, worship",
+  "i – VI – III – VII": "Trap, cinematic, alt-rock",
+  "i – iv – v – i": "Folk, classical minor, blues",
+  "i – VII – VI – V": "Andalusian / flamenco, metal",
+  "i – iv – VII – III": "Neo-soul, R&B, jazz minor",
+};
 
 /* ---------- Component ---------- */
 
@@ -304,6 +317,59 @@ function FreePlayPage() {
       label: names[i] ?? `${i}th inv`,
     }));
   }, [topMatch]);
+
+  /* ---------- Custom progression builder ---------- */
+  const isMinorKey = scaleId === "minor" || scaleId === "harmonic_minor" || scaleId === "melodic_minor";
+  const keyDiatonic = useMemo(() => diatonicChords(scale, false), [scale]);
+  // Each slot: degree index 0..6 into keyDiatonic, plus optional chord-type override (null = diatonic)
+  const [customSlots, setCustomSlots] = useState<{ deg: number; type: ChordType | null }[]>([
+    { deg: 5, type: null }, // vi / VI
+    { deg: 1, type: null }, // ii / ii°
+    { deg: 4, type: null }, // V / v
+    { deg: 0, type: null }, // I / i
+  ]);
+  // Reset overrides when key/scale changes so qualities follow the new key.
+  const resetCustomTypes = () => setCustomSlots((slots) => slots.map((s) => ({ ...s, type: null })));
+  const CHORD_OPTIONS: ChordType[] = ["maj", "min", "sus2", "sus4", "dom7", "maj7", "min7", "dim", "m7b5", "aug"];
+  const romanFor = (deg: number) => {
+    const major = ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
+    const minor = ["i", "ii°", "III", "iv", "v", "VI", "VII"];
+    return (isMinorKey ? minor : major)[deg] ?? "?";
+  };
+  const slotChord = (s: { deg: number; type: ChordType | null }) => {
+    const dia = keyDiatonic[s.deg % keyDiatonic.length];
+    const type = s.type ?? dia.type;
+    const rootPc = dia.rootPc;
+    const symbol = pcName(rootPc) + CHORD_FORMULAS[type].suffix;
+    return { type, rootPc, symbol };
+  };
+  const playCustomProgression = () => {
+    void unlockAudio();
+    customSlots.forEach((s, i) => {
+      const c = slotChord(s);
+      const midis = chordMidis(c.rootPc, c.type, null);
+      setTimeout(() => playChord(midis, { duration: 0.9, type: "triangle" }), i * 750);
+    });
+  };
+  const addSlot = () => setCustomSlots((s) => (s.length >= 8 ? s : [...s, { deg: 0, type: null }]));
+  const removeSlot = (idx: number) => setCustomSlots((s) => (s.length <= 1 ? s : s.filter((_, i) => i !== idx)));
+  const updateSlot = (idx: number, patch: Partial<{ deg: number; type: ChordType | null }>) =>
+    setCustomSlots((s) => s.map((sl, i) => (i === idx ? { ...sl, ...patch } : sl)));
+  // Common genre guess for a custom progression based on the degree sequence
+  const customGenre = useMemo(() => {
+    const degs = customSlots.map((s) => s.deg).join("-");
+    const map: Record<string, string> = {
+      "0-4-5-3": "Pop / rock anthems",
+      "5-3-0-4": "Modern pop, EDM, worship",
+      "0-5-3-4": "50s doo-wop, R&B",
+      "1-4-0": "Jazz",
+      "1-4-0-5": "Jazz / R&B",
+      "5-1-4-0": "Pop / rock, soul (vi-ii-V-I)",
+      "0-3-4": "Blues, folk, classic rock",
+      "0-5-2-6": "Trap, cinematic minor",
+    };
+    return map[degs] ?? "Custom — try playing it in different keys";
+  }, [customSlots]);
 
   // Diatonic chord suggestions when only one note is held — based on scale rooted on that note.
   const singleNoteChords = useMemo(() => {
@@ -688,7 +754,12 @@ function FreePlayPage() {
             {progressions.map((prog, i) => (
               <div key={i} className="rounded-lg border border-border bg-secondary/40 p-3">
                 <div className="flex items-center justify-between">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-gold">{prog.name}</div>
+                  <div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest text-gold">{prog.name}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      Common in <span className="text-foreground">{prog.genre}</span> · in {keyRoot} {SCALES[scaleId].name}
+                    </div>
+                  </div>
                   <button
                     onClick={() => playProgression(prog)}
                     className="rounded border border-gold/50 bg-gold/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-gold hover:bg-gold/20"
@@ -714,6 +785,107 @@ function FreePlayPage() {
             ))}
           </div>
         )}
+      </Card>
+
+      {/* Custom progression builder */}
+      <Card
+        kicker="// Build your own progression"
+        right={
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            In <span className="text-gold">{keyRoot} {SCALES[scaleId].name}</span>
+          </span>
+        }
+      >
+        <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+          Pick a degree for each slot (e.g. vi–ii–V–I), then override any chord quality (e.g. swap a plain vi for an Em7). Defaults follow the diatonic chord of {keyRoot} {SCALES[scaleId].name}.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          {customSlots.map((s, i) => {
+            const dia = keyDiatonic[s.deg];
+            const c = slotChord(s);
+            const isOverride = s.type != null && s.type !== dia.type;
+            return (
+              <div
+                key={i}
+                className={`flex w-40 flex-col gap-1 rounded-lg border p-2 ${
+                  isOverride ? "border-gold/60 bg-gold/5" : "border-border bg-secondary/40"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-gold">Slot {i + 1}</span>
+                  <button
+                    onClick={() => removeSlot(i)}
+                    disabled={customSlots.length <= 1}
+                    className="font-mono text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Remove slot"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <select
+                  value={s.deg}
+                  onChange={(e) => updateSlot(i, { deg: Number(e.target.value), type: null })}
+                  className="rounded border border-border bg-background px-2 py-1 font-mono text-xs focus:border-gold focus:outline-none"
+                >
+                  {keyDiatonic.map((d, di) => (
+                    <option key={di} value={di}>
+                      {romanFor(di)} — {d.symbol}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={s.type ?? dia.type}
+                  onChange={(e) => {
+                    const v = e.target.value as ChordType;
+                    updateSlot(i, { type: v === dia.type ? null : v });
+                  }}
+                  className="rounded border border-border bg-background px-2 py-1 font-mono text-xs focus:border-gold focus:outline-none"
+                >
+                  {CHORD_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {pcName(dia.rootPc)}{CHORD_FORMULAS[t].suffix || " (maj)"}
+                      {t === dia.type ? " · diatonic" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => playChord(chordMidis(c.rootPc, c.type, null), { duration: 1, type: "triangle" })}
+                  className="mt-1 rounded border border-border bg-background px-2 py-1 text-center font-mono text-sm font-semibold hover:border-gold/60 hover:text-gold"
+                >
+                  {c.symbol}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={addSlot}
+            disabled={customSlots.length >= 8}
+            className="rounded-md border border-border bg-secondary px-3 py-1.5 font-mono text-xs uppercase tracking-widest hover:border-gold/50 disabled:opacity-40"
+          >
+            + Add chord
+          </button>
+          <button
+            onClick={resetCustomTypes}
+            className="rounded-md border border-border bg-secondary px-3 py-1.5 font-mono text-xs uppercase tracking-widest hover:border-gold/50"
+          >
+            Reset qualities
+          </button>
+          <button
+            onClick={playCustomProgression}
+            className="rounded-md border border-gold/60 bg-gold/10 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-gold hover:bg-gold/20"
+          >
+            ▶ Play progression
+          </button>
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            Sequence: <span className="text-gold">{customSlots.map((s) => romanFor(s.deg)).join(" – ")}</span>
+          </span>
+        </div>
+        <div className="mt-3 rounded-lg border border-border/60 bg-secondary/30 p-3 font-mono text-[11px] text-muted-foreground">
+          <span className="text-gold">Common in:</span> {customGenre}
+          <span className="ml-2 text-[10px]">· in {keyRoot} {SCALES[scaleId].name}</span>
+        </div>
       </Card>
     </div>
   );
