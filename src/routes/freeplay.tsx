@@ -701,7 +701,12 @@ function FreePlayPage() {
             {progressions.map((prog, i) => (
               <div key={i} className="rounded-lg border border-border bg-secondary/40 p-3">
                 <div className="flex items-center justify-between">
-                  <div className="font-mono text-[10px] uppercase tracking-widest text-gold">{prog.name}</div>
+                  <div>
+                    <div className="font-mono text-[10px] uppercase tracking-widest text-gold">{prog.name}</div>
+                    <div className="font-mono text-[10px] text-muted-foreground">
+                      Common in <span className="text-foreground">{prog.genre}</span> · in {keyRoot} {SCALES[scaleId].name}
+                    </div>
+                  </div>
                   <button
                     onClick={() => playProgression(prog)}
                     className="rounded border border-gold/50 bg-gold/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-gold hover:bg-gold/20"
