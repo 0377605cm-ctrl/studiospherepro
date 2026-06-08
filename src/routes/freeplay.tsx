@@ -786,6 +786,107 @@ function FreePlayPage() {
           </div>
         )}
       </Card>
+
+      {/* Custom progression builder */}
+      <Card
+        kicker="// Build your own progression"
+        right={
+          <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+            In <span className="text-gold">{keyRoot} {SCALES[scaleId].name}</span>
+          </span>
+        }
+      >
+        <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+          Pick a degree for each slot (e.g. vi–ii–V–I), then override any chord quality (e.g. swap a plain vi for an Em7). Defaults follow the diatonic chord of {keyRoot} {SCALES[scaleId].name}.
+        </p>
+        <div className="flex flex-wrap items-end gap-2">
+          {customSlots.map((s, i) => {
+            const dia = keyDiatonic[s.deg];
+            const c = slotChord(s);
+            const isOverride = s.type != null && s.type !== dia.type;
+            return (
+              <div
+                key={i}
+                className={`flex w-40 flex-col gap-1 rounded-lg border p-2 ${
+                  isOverride ? "border-gold/60 bg-gold/5" : "border-border bg-secondary/40"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <span className="font-mono text-[9px] uppercase tracking-widest text-gold">Slot {i + 1}</span>
+                  <button
+                    onClick={() => removeSlot(i)}
+                    disabled={customSlots.length <= 1}
+                    className="font-mono text-[10px] text-muted-foreground hover:text-foreground disabled:opacity-30"
+                    title="Remove slot"
+                  >
+                    ✕
+                  </button>
+                </div>
+                <select
+                  value={s.deg}
+                  onChange={(e) => updateSlot(i, { deg: Number(e.target.value), type: null })}
+                  className="rounded border border-border bg-background px-2 py-1 font-mono text-xs focus:border-gold focus:outline-none"
+                >
+                  {keyDiatonic.map((d, di) => (
+                    <option key={di} value={di}>
+                      {romanFor(di)} — {d.symbol}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={s.type ?? dia.type}
+                  onChange={(e) => {
+                    const v = e.target.value as ChordType;
+                    updateSlot(i, { type: v === dia.type ? null : v });
+                  }}
+                  className="rounded border border-border bg-background px-2 py-1 font-mono text-xs focus:border-gold focus:outline-none"
+                >
+                  {CHORD_OPTIONS.map((t) => (
+                    <option key={t} value={t}>
+                      {pcName(dia.rootPc)}{CHORD_FORMULAS[t].suffix || " (maj)"}
+                      {t === dia.type ? " · diatonic" : ""}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  onClick={() => playChord(chordMidis(c.rootPc, c.type, null), { duration: 1, type: "triangle" })}
+                  className="mt-1 rounded border border-border bg-background px-2 py-1 text-center font-mono text-sm font-semibold hover:border-gold/60 hover:text-gold"
+                >
+                  {c.symbol}
+                </button>
+              </div>
+            );
+          })}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <button
+            onClick={addSlot}
+            disabled={customSlots.length >= 8}
+            className="rounded-md border border-border bg-secondary px-3 py-1.5 font-mono text-xs uppercase tracking-widest hover:border-gold/50 disabled:opacity-40"
+          >
+            + Add chord
+          </button>
+          <button
+            onClick={resetCustomTypes}
+            className="rounded-md border border-border bg-secondary px-3 py-1.5 font-mono text-xs uppercase tracking-widest hover:border-gold/50"
+          >
+            Reset qualities
+          </button>
+          <button
+            onClick={playCustomProgression}
+            className="rounded-md border border-gold/60 bg-gold/10 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-gold hover:bg-gold/20"
+          >
+            ▶ Play progression
+          </button>
+          <span className="ml-auto font-mono text-[10px] text-muted-foreground">
+            Sequence: <span className="text-gold">{customSlots.map((s) => romanFor(s.deg)).join(" – ")}</span>
+          </span>
+        </div>
+        <div className="mt-3 rounded-lg border border-border/60 bg-secondary/30 p-3 font-mono text-[11px] text-muted-foreground">
+          <span className="text-gold">Common in:</span> {customGenre}
+          <span className="ml-2 text-[10px]">· in {keyRoot} {SCALES[scaleId].name}</span>
+        </div>
+      </Card>
     </div>
   );
 }
