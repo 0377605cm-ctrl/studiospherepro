@@ -318,6 +318,59 @@ function FreePlayPage() {
     }));
   }, [topMatch]);
 
+  /* ---------- Custom progression builder ---------- */
+  const isMinorKey = scaleId === "minor" || scaleId === "harmonic_minor" || scaleId === "melodic_minor";
+  const keyDiatonic = useMemo(() => diatonicChords(scale, false), [scale]);
+  // Each slot: degree index 0..6 into keyDiatonic, plus optional chord-type override (null = diatonic)
+  const [customSlots, setCustomSlots] = useState<{ deg: number; type: ChordType | null }[]>([
+    { deg: 5, type: null }, // vi / VI
+    { deg: 1, type: null }, // ii / ii°
+    { deg: 4, type: null }, // V / v
+    { deg: 0, type: null }, // I / i
+  ]);
+  // Reset overrides when key/scale changes so qualities follow the new key.
+  const resetCustomTypes = () => setCustomSlots((slots) => slots.map((s) => ({ ...s, type: null })));
+  const CHORD_OPTIONS: ChordType[] = ["maj", "min", "sus2", "sus4", "dom7", "maj7", "min7", "dim", "m7b5", "aug"];
+  const romanFor = (deg: number) => {
+    const major = ["I", "ii", "iii", "IV", "V", "vi", "vii°"];
+    const minor = ["i", "ii°", "III", "iv", "v", "VI", "VII"];
+    return (isMinorKey ? minor : major)[deg] ?? "?";
+  };
+  const slotChord = (s: { deg: number; type: ChordType | null }) => {
+    const dia = keyDiatonic[s.deg];
+    const type = s.type ?? dia.type;
+    const rootPc = dia.rootPc;
+    const symbol = pcName(rootPc) + CHORD_FORMULAS[type].suffix;
+    return { type, rootPc, symbol };
+  };
+  const playCustomProgression = () => {
+    void unlockAudio();
+    customSlots.forEach((s, i) => {
+      const c = slotChord(s);
+      const midis = chordMidis(c.rootPc, c.type, null);
+      setTimeout(() => playChord(midis, { duration: 0.9, type: "triangle" }), i * 750);
+    });
+  };
+  const addSlot = () => setCustomSlots((s) => (s.length >= 8 ? s : [...s, { deg: 0, type: null }]));
+  const removeSlot = (idx: number) => setCustomSlots((s) => (s.length <= 1 ? s : s.filter((_, i) => i !== idx)));
+  const updateSlot = (idx: number, patch: Partial<{ deg: number; type: ChordType | null }>) =>
+    setCustomSlots((s) => s.map((sl, i) => (i === idx ? { ...sl, ...patch } : sl)));
+  // Common genre guess for a custom progression based on the degree sequence
+  const customGenre = useMemo(() => {
+    const degs = customSlots.map((s) => s.deg).join("-");
+    const map: Record<string, string> = {
+      "0-4-5-3": "Pop / rock anthems",
+      "5-3-0-4": "Modern pop, EDM, worship",
+      "0-5-3-4": "50s doo-wop, R&B",
+      "1-4-0": "Jazz",
+      "1-4-0-5": "Jazz / R&B",
+      "5-1-4-0": "Pop / rock, soul (vi-ii-V-I)",
+      "0-3-4": "Blues, folk, classic rock",
+      "0-5-2-6": "Trap, cinematic minor",
+    };
+    return map[degs] ?? "Custom — try playing it in different keys";
+  }, [customSlots]);
+
   // Diatonic chord suggestions when only one note is held — based on scale rooted on that note.
   const singleNoteChords = useMemo(() => {
     if (singlePc == null || singleNoteName == null) return [];
