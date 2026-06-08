@@ -124,6 +124,7 @@ function identifyChords(activePcs: number[]): ChordMatch[] {
 interface ProgressionSuggestion {
   name: string;
   chords: { symbol: string; type: ChordType; rootPc: number }[];
+  genre: string;
 }
 
 function suggestProgressions(rootPc: number, type: ChordType, keyRoot: string, scaleId: ScaleId): ProgressionSuggestion[] {
@@ -161,9 +162,21 @@ function suggestProgressions(rootPc: number, type: ChordType, keyRoot: string, s
       const c = dia[d % dia.length];
       return { symbol: c.symbol, type: c.type, rootPc: c.rootPc };
     });
-    return { name: tpl.name, chords };
+    return { name: tpl.name, chords, genre: PROGRESSION_GENRES[tpl.name] ?? "Versatile" };
   });
 }
+
+/** Common genre association for each named progression template. */
+const PROGRESSION_GENRES: Record<string, string> = {
+  "I – V – vi – IV": "Pop / rock anthems (the “4-chord song”)",
+  "ii – V – I": "Jazz standards / bebop turnarounds",
+  "I – vi – IV – V": "50s doo-wop, classic R&B, pop ballads",
+  "vi – IV – I – V": "Modern pop, EDM, worship",
+  "i – VI – III – VII": "Trap, cinematic, alt-rock",
+  "i – iv – v – i": "Folk, classical minor, blues",
+  "i – VII – VI – V": "Andalusian / flamenco, metal",
+  "i – iv – VII – III": "Neo-soul, R&B, jazz minor",
+};
 
 /* ---------- Component ---------- */
 
