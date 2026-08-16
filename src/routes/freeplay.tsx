@@ -63,6 +63,72 @@ function pcName(pc: number): string {
   return NOTE_NAMES_SHARP[((pc % 12) + 12) % 12];
 }
 
+/* ---------- Scales that fit a chord ---------- */
+
+const SCALE_MOOD: Partial<Record<ScaleId, string>> = {
+  major: "Bright, resolved",
+  minor: "Dark, melancholic",
+  pentatonic_major: "Open, country / rock",
+  pentatonic_minor: "Gritty rock & blues",
+  blues: "Dirty, expressive",
+  dorian: "Jazzy minor, funky",
+  mixolydian: "Bluesy dominant groove",
+  lydian: "Dreamy, floating",
+  phrygian: "Spanish / metal edge",
+  locrian: "Unstable, tense",
+  harmonic_minor: "Exotic, classical drama",
+  melodic_minor: "Smooth jazz minor",
+  phrygian_dominant: "Flamenco, middle-eastern",
+  whole_tone: "Dreamlike, ambiguous",
+  diminished: "Tense, symmetrical",
+  altered: "Outside, modern jazz",
+};
+
+interface ScaleFit {
+  id: ScaleId;
+  rootName: string;
+  rootPc: number;
+  name: string;
+  mood: string;
+  notePcs: number[];
+  noteNames: string[];
+  score: number;
+}
+
+/** Scales (rooted on any chord tone) that contain every note of the chord. */
+function scalesForChord(rootPc: number, type: ChordType): ScaleFit[] {
+  const chordPcs = CHORD_FORMULAS[type].intervals.map((iv) => (rootPc + iv) % 12);
+  const chordSet = new Set(chordPcs);
+  const out: ScaleFit[] = [];
+  const roots = Array.from(new Set(chordPcs));
+  for (const r of roots) {
+    for (const id of Object.keys(SCALES) as ScaleId[]) {
+      const pcs = SCALES[id].intervals.map((iv) => (r + iv) % 12);
+      const set = new Set(pcs);
+      let ok = true;
+      chordSet.forEach((pc) => {
+        if (!set.has(pc)) ok = false;
+      });
+      if (!ok) continue;
+      // Prefer scales rooted on the chord root, fewer extra notes, easier scales.
+      const extras = pcs.filter((pc) => !chordSet.has(pc)).length;
+      const diffPenalty = { easy: 0, intermediate: 1, difficult: 2, "very-difficult": 3 }[SCALES[id].difficulty];
+      const score = (r === rootPc ? 0 : 6) + extras * 0.5 + diffPenalty;
+      out.push({
+        id,
+        rootPc: r,
+        rootName: pcName(r),
+        name: SCALES[id].name,
+        mood: SCALE_MOOD[id] ?? "",
+        notePcs: pcs,
+        noteNames: pcs.map((pc) => pcName(pc)),
+        score,
+      });
+    }
+  }
+  return out.sort((a, b) => a.score - b.score).slice(0, 10);
+}
+
 /* ---------- Chord identification ---------- */
 
 interface ChordMatch {
@@ -378,6 +444,21 @@ function FreePlayPage() {
     return diatonicChords(localScale, false).slice(0, 7);
   }, [singlePc, singleNoteName, scaleId]);
 
+  /* ---------- Scales that sound good over the detected chord ---------- */
+  const chordScaleFits = useMemo(
+    () => (topMatch && activePcs.length >= 2 ? scalesForChord(topMatch.rootPc, topMatch.type) : []),
+    [topMatch, activePcs.length],
+  );
+  const playScaleRun = (fit: ScaleFit) => {
+    void unlockAudio();
+    const base = 48 + fit.rootPc; // C3 region
+    const rel = SCALES[fit.id].intervals;
+    const midis = [...rel.map((iv) => base + iv), base + 12];
+    midis.forEach((m, i) =>
+      setTimeout(() => playMidi(m, { duration: 0.35, type: view === "piano" ? "triangle" : "sawtooth" }), i * 220),
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
       <PageHeader
@@ -655,7 +736,78 @@ function FreePlayPage() {
         )}
       </Card>
 
-      {/* Single-note → suggested diatonic chords */}
+      {/* Scales that fit the detected chord */}
+      {chordScaleFits.length > 0 && topMatch && (
+        <Card
+          kicker="// Scales over this chord"
+          right={
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Fits <span className="text-gold">{topMatch.symbol}</span>
+            </span>
+          }
+        >
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Every scale below contains all notes of {topMatch.symbol}. Tap the name to load it on the{" "}
+            {view === "piano" ? "keyboard" : "fretboard"}, or ▶ to hear it.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {chordScaleFits.map((fit) => {
+              const isCurrent = keyRoot === fit.rootName && scaleId === fit.id;
+              return (
+                <div
+                  key={`${fit.rootPc}-${fit.id}`}
+                  className={`rounded-lg border p-3 transition-all ${
+                    isCurrent ? "border-gold bg-gold/10" : "border-border bg-secondary/40 hover:border-gold/60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        setKeyRoot(fit.rootName);
+                        setScaleId(fit.id);
+                      }}
+                      className="text-left"
+                    >
+                      <div className="text-sm font-bold tracking-tight">
+                        {fit.rootName} {fit.name}
+                      </div>
+                      {fit.mood && (
+                        <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {fit.mood}
+                        </div>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => playScaleRun(fit)}
+                      className="shrink-0 rounded border border-gold/50 px-2 py-1 font-mono text-[10px] text-gold transition-colors hover:bg-gold/15"
+                      aria-label={`Play ${fit.rootName} ${fit.name}`}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {fit.noteNames.map((n, i) => {
+                      const inChord = chordPcSet.has(fit.notePcs[i]);
+                      return (
+                        <span
+                          key={i}
+                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                            inChord
+                              ? "bg-gold text-gold-foreground font-semibold"
+                              : "bg-background text-muted-foreground"
+                          }`}
+                        >
+                          {n}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
       {singlePc !== null && singleNoteChords.length > 0 && (
         <Card
           kicker="// Chords from this note"
