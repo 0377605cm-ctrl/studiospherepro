@@ -63,6 +63,72 @@ function pcName(pc: number): string {
   return NOTE_NAMES_SHARP[((pc % 12) + 12) % 12];
 }
 
+/* ---------- Scales that fit a chord ---------- */
+
+const SCALE_MOOD: Partial<Record<ScaleId, string>> = {
+  major: "Bright, resolved",
+  minor: "Dark, melancholic",
+  pentatonic_major: "Open, country / rock",
+  pentatonic_minor: "Gritty rock & blues",
+  blues: "Dirty, expressive",
+  dorian: "Jazzy minor, funky",
+  mixolydian: "Bluesy dominant groove",
+  lydian: "Dreamy, floating",
+  phrygian: "Spanish / metal edge",
+  locrian: "Unstable, tense",
+  harmonic_minor: "Exotic, classical drama",
+  melodic_minor: "Smooth jazz minor",
+  phrygian_dominant: "Flamenco, middle-eastern",
+  whole_tone: "Dreamlike, ambiguous",
+  diminished: "Tense, symmetrical",
+  altered: "Outside, modern jazz",
+};
+
+interface ScaleFit {
+  id: ScaleId;
+  rootName: string;
+  rootPc: number;
+  name: string;
+  mood: string;
+  notePcs: number[];
+  noteNames: string[];
+  score: number;
+}
+
+/** Scales (rooted on any chord tone) that contain every note of the chord. */
+function scalesForChord(rootPc: number, type: ChordType): ScaleFit[] {
+  const chordPcs = CHORD_FORMULAS[type].intervals.map((iv) => (rootPc + iv) % 12);
+  const chordSet = new Set(chordPcs);
+  const out: ScaleFit[] = [];
+  const roots = Array.from(new Set(chordPcs));
+  for (const r of roots) {
+    for (const id of Object.keys(SCALES) as ScaleId[]) {
+      const pcs = SCALES[id].intervals.map((iv) => (r + iv) % 12);
+      const set = new Set(pcs);
+      let ok = true;
+      chordSet.forEach((pc) => {
+        if (!set.has(pc)) ok = false;
+      });
+      if (!ok) continue;
+      // Prefer scales rooted on the chord root, fewer extra notes, easier scales.
+      const extras = pcs.filter((pc) => !chordSet.has(pc)).length;
+      const diffPenalty = { easy: 0, intermediate: 1, difficult: 2, "very-difficult": 3 }[SCALES[id].difficulty];
+      const score = (r === rootPc ? 0 : 6) + extras * 0.5 + diffPenalty;
+      out.push({
+        id,
+        rootPc: r,
+        rootName: pcName(r),
+        name: SCALES[id].name,
+        mood: SCALE_MOOD[id] ?? "",
+        notePcs: pcs,
+        noteNames: pcs.map((pc) => pcName(pc)),
+        score,
+      });
+    }
+  }
+  return out.sort((a, b) => a.score - b.score).slice(0, 10);
+}
+
 /* ---------- Chord identification ---------- */
 
 interface ChordMatch {
