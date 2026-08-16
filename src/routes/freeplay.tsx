@@ -444,6 +444,21 @@ function FreePlayPage() {
     return diatonicChords(localScale, false).slice(0, 7);
   }, [singlePc, singleNoteName, scaleId]);
 
+  /* ---------- Scales that sound good over the detected chord ---------- */
+  const chordScaleFits = useMemo(
+    () => (topMatch && activePcs.length >= 2 ? scalesForChord(topMatch.rootPc, topMatch.type) : []),
+    [topMatch, activePcs.length],
+  );
+  const playScaleRun = (fit: ScaleFit) => {
+    void unlockAudio();
+    const base = 48 + fit.rootPc; // C3 region
+    const rel = SCALES[fit.id].intervals;
+    const midis = [...rel.map((iv) => base + iv), base + 12];
+    midis.forEach((m, i) =>
+      setTimeout(() => playMidi(m, { duration: 0.35, type: view === "piano" ? "triangle" : "sawtooth" }), i * 220),
+    );
+  };
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-4 py-8 sm:px-6">
       <PageHeader
