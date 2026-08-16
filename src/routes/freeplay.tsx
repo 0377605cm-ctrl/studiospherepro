@@ -738,6 +738,81 @@ function FreePlayPage() {
 
       {/* Single-note → suggested diatonic chords */}
       {singlePc !== null && singleNoteChords.length > 0 && (
+        <></>
+      )}
+      {/* Scales that fit the detected chord */}
+      {chordScaleFits.length > 0 && topMatch && (
+        <Card
+          kicker="// Scales over this chord"
+          right={
+            <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+              Fits <span className="text-gold">{topMatch.symbol}</span>
+            </span>
+          }
+        >
+          <p className="mb-3 font-mono text-[11px] text-muted-foreground">
+            Every scale below contains all notes of {topMatch.symbol}. Tap the name to load it on the{" "}
+            {view === "piano" ? "keyboard" : "fretboard"}, or ▶ to hear it.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {chordScaleFits.map((fit) => {
+              const isCurrent = keyRoot === fit.rootName && scaleId === fit.id;
+              return (
+                <div
+                  key={`${fit.rootPc}-${fit.id}`}
+                  className={`rounded-lg border p-3 transition-all ${
+                    isCurrent ? "border-gold bg-gold/10" : "border-border bg-secondary/40 hover:border-gold/60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <button
+                      onClick={() => {
+                        setKeyRoot(fit.rootName);
+                        setScaleId(fit.id);
+                      }}
+                      className="text-left"
+                    >
+                      <div className="text-sm font-bold tracking-tight">
+                        {fit.rootName} {fit.name}
+                      </div>
+                      {fit.mood && (
+                        <div className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+                          {fit.mood}
+                        </div>
+                      )}
+                    </button>
+                    <button
+                      onClick={() => playScaleRun(fit)}
+                      className="shrink-0 rounded border border-gold/50 px-2 py-1 font-mono text-[10px] text-gold transition-colors hover:bg-gold/15"
+                      aria-label={`Play ${fit.rootName} ${fit.name}`}
+                    >
+                      ▶
+                    </button>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {fit.noteNames.map((n, i) => {
+                      const inChord = chordPcSet.has(fit.notePcs[i]);
+                      return (
+                        <span
+                          key={i}
+                          className={`rounded px-1.5 py-0.5 font-mono text-[10px] ${
+                            inChord
+                              ? "bg-gold text-gold-foreground font-semibold"
+                              : "bg-background text-muted-foreground"
+                          }`}
+                        >
+                          {n}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+      {singlePc !== null && singleNoteChords.length > 0 && (
         <Card
           kicker="// Chords from this note"
           right={
