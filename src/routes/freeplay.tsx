@@ -736,10 +736,6 @@ function FreePlayPage() {
         )}
       </Card>
 
-      {/* Single-note → suggested diatonic chords */}
-      {singlePc !== null && singleNoteChords.length > 0 && (
-        <></>
-      )}
       {/* Scales that fit the detected chord */}
       {chordScaleFits.length > 0 && topMatch && (
         <Card
