@@ -9,25 +9,15 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as ScalesRouteImport } from './routes/scales'
-import { Route as FreeplayRouteImport } from './routes/freeplay'
-import { Route as CircleRouteImport } from './routes/circle'
-import { Route as AnalyzerRouteImport } from './routes/analyzer'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AnalyzerRouteImport } from './routes/analyzer'
+import { Route as CircleRouteImport } from './routes/circle'
+import { Route as FreeplayRouteImport } from './routes/freeplay'
+import { Route as ScalesRouteImport } from './routes/scales'
 
-const ScalesRoute = ScalesRouteImport.update({
-  id: '/scales',
-  path: '/scales',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FreeplayRoute = FreeplayRouteImport.update({
-  id: '/freeplay',
-  path: '/freeplay',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CircleRoute = CircleRouteImport.update({
-  id: '/circle',
-  path: '/circle',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AnalyzerRoute = AnalyzerRouteImport.update({
@@ -35,9 +25,19 @@ const AnalyzerRoute = AnalyzerRouteImport.update({
   path: '/analyzer',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const CircleRoute = CircleRouteImport.update({
+  id: '/circle',
+  path: '/circle',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FreeplayRoute = FreeplayRouteImport.update({
+  id: '/freeplay',
+  path: '/freeplay',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ScalesRoute = ScalesRouteImport.update({
+  id: '/scales',
+  path: '/scales',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -81,25 +81,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/scales': {
-      id: '/scales'
-      path: '/scales'
-      fullPath: '/scales'
-      preLoaderRoute: typeof ScalesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/freeplay': {
-      id: '/freeplay'
-      path: '/freeplay'
-      fullPath: '/freeplay'
-      preLoaderRoute: typeof FreeplayRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/circle': {
-      id: '/circle'
-      path: '/circle'
-      fullPath: '/circle'
-      preLoaderRoute: typeof CircleRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/analyzer': {
@@ -109,11 +95,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AnalyzerRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/circle': {
+      id: '/circle'
+      path: '/circle'
+      fullPath: '/circle'
+      preLoaderRoute: typeof CircleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/freeplay': {
+      id: '/freeplay'
+      path: '/freeplay'
+      fullPath: '/freeplay'
+      preLoaderRoute: typeof FreeplayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/scales': {
+      id: '/scales'
+      path: '/scales'
+      fullPath: '/scales'
+      preLoaderRoute: typeof ScalesRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

@@ -20,7 +20,7 @@ const MOVEABLE: Record<ChordType, Template> = {
   sus2: { frets: [0, 2, 4, 4, 0, 0], fingers: [1, 2, 4, 4, 1, 1] },
   sus4: { frets: [0, 2, 2, 2, 0, 0], fingers: [1, 3, 3, 3, 1, 1] },
   dim: { frets: [null, null, 2, 3, null, 3], fingers: [0, 0, 1, 2, 0, 3] },
-  m7b5: { frets: [0, null, 0, 0, 3, null], fingers: [1, 0, 1, 1, 4, 0] },
+  m7b5: { frets: [0, 1, 0, 0, null, null], fingers: [1, 2, 1, 1, 0, 0] },
   dim7: { frets: [null, null, 2, 3, 2, 3], fingers: [0, 0, 1, 2, 1, 3] },
   aug: { frets: [0, null, 2, 1, 1, null], fingers: [1, 0, 4, 2, 3, 0] },
   maj9: { frets: [0, 2, 1, 1, 0, 2], fingers: [1, 4, 2, 3, 1, 4] },

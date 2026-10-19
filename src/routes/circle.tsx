@@ -14,8 +14,12 @@ import { GlobalControls } from "@/components/GlobalControls";
 export const Route = createFileRoute("/circle")({
   head: () => ({
     meta: [
-      { title: "Circle of Fifths — Chris goes: Pro" },
+      { title: "Circle of Fifths — StudioSphere" },
       { name: "description", content: "Interactive circle of fifths. See key relationships, dominants, subdominants, and relative minors." },
+      { property: "og:title", content: "Circle of Fifths — StudioSphere" },
+      { property: "og:description", content: "Interactive circle of fifths. See key relationships, dominants, subdominants, and relative minors." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: CirclePage,

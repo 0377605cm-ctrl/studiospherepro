@@ -21,8 +21,12 @@ import { playMidi, playChord } from "@/lib/audio/synth";
 export const Route = createFileRoute("/scales")({
   head: () => ({
     meta: [
-      { title: "Scales & Theory — Chris goes: Pro" },
+      { title: "Scales & Theory — StudioSphere" },
       { name: "description", content: "Visualize scales, modes, chords and arpeggios on guitar and piano." },
+      { property: "og:title", content: "Scales & Theory — StudioSphere" },
+      { property: "og:description", content: "Visualize scales, modes, chords and arpeggios on guitar and piano." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: ScalesPage,
