@@ -22,8 +22,12 @@ import { prepareMediaElementPlayback, unlockAudio, playChord } from "@/lib/audio
 export const Route = createFileRoute("/analyzer")({
   head: () => ({
     meta: [
-      { title: "Audio Analyzer — Chris goes: Pro" },
+      { title: "Audio Analyzer — StudioSphere" },
       { name: "description", content: "Upload an MP3 to detect key, chords, BPM and get a chord sheet with suggested scales." },
+      { property: "og:title", content: "Audio Analyzer — StudioSphere" },
+      { property: "og:description", content: "Upload an MP3 to detect key, chords, BPM and get a chord sheet with suggested scales." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: AnalyzerPage,

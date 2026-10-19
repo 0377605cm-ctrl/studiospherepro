@@ -6,6 +6,10 @@ export const Route = createFileRoute("/")({
     meta: [
       { title: "StudioSphere — Visual Music Theory Toolkit" },
       { name: "description", content: "Learn scales, navigate the circle of fifths, and analyze any track. Guitar + Piano." },
+      { property: "og:title", content: "StudioSphere — Visual Music Theory Toolkit" },
+      { property: "og:description", content: "Learn scales, navigate the circle of fifths, and analyze any track. Guitar + Piano." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: Index,
