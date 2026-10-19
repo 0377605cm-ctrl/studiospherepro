@@ -1,3 +1,3 @@
-- [ ] Add guitar fingering diagrams to suggested Free-Play progressions.
-- [ ] Verify chord diagrams and playback in the live page.
-- [ ] Apply the required package security update.
+- [x] Add guitar fingering diagrams to suggested Free-Play progressions.
+- [x] Verify chord diagrams and playback in the live page.
+- [x] Apply the required package security update.
