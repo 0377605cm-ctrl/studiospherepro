@@ -14,6 +14,9 @@ import {
   type ChordType,
 } from "@/lib/music/theory";
 import { Fretboard } from "@/components/Fretboard";
+import { GuitarChordDiagram } from "@/components/GuitarChordDiagram";
+import { Button } from "@/components/ui/button";
+import { Play } from "lucide-react";
 import { playMidi, playChord, playSlide, unlockAudio } from "@/lib/audio/synth";
 import { PageHeader, Card } from "./scales";
 
@@ -24,6 +27,8 @@ export const Route = createFileRoute("/freeplay")({
       { name: "description", content: "Play any note on a full piano or fretboard. Get instant chord matches and suggested progressions." },
       { property: "og:title", content: "Free-Play — StudioSphere" },
       { property: "og:description", content: "Tap notes, see possible chords and chord progressions in real time." },
+      { property: "og:type", content: "website" },
+      { name: "twitter:card", content: "summary_large_image" },
     ],
   }),
   component: FreePlayPage,
@@ -905,34 +910,26 @@ function FreePlayPage() {
           <div className="grid gap-3 sm:grid-cols-2">
             {progressions.map((prog, i) => (
               <div key={i} className="rounded-lg border border-border bg-secondary/40 p-3">
-                <div className="flex items-center justify-between">
-                  <div>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
                     <div className="font-mono text-[10px] uppercase tracking-widest text-gold">{prog.name}</div>
                     <div className="font-mono text-[10px] text-muted-foreground">
                       Common in <span className="text-foreground">{prog.genre}</span> · in {keyRoot} {SCALES[scaleId].name}
                     </div>
                   </div>
-                  <button
+                  <Button variant="outline" size="sm"
                     onClick={() => playProgression(prog)}
-                    className="rounded border border-gold/50 bg-gold/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-widest text-gold hover:bg-gold/20"
+                    className="shrink-0 border-gold/50 bg-gold/10 font-mono text-[10px] text-gold hover:bg-gold/20"
                   >
-                    ▶ Play
-                  </button>
+                    <Play /> Play
+                  </Button>
                 </div>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {prog.chords.map((c, j) => {
-                    const midis = CHORD_FORMULAS[c.type].intervals.map((iv) => 48 + c.rootPc + iv);
-                    return (
-                      <button
-                        key={j}
-                        onClick={() => playChord(midis, { duration: 1, type: "triangle" })}
-                        className="rounded-md border border-border bg-background px-3 py-1.5 font-mono text-sm font-semibold transition-colors hover:border-gold/50 hover:text-gold"
-                      >
-                        {c.symbol}
-                      </button>
-                    );
-                  })}
+                <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 lg:grid-cols-4">
+                  {prog.chords.map((c, j) => (
+                    <GuitarChordDiagram key={j} rootPc={c.rootPc} type={c.type} symbol={c.symbol} />
+                  ))}
                 </div>
+                <p className="mt-1 font-mono text-[10px] text-muted-foreground">Standard tuning · ○ open · × muted · 1 index · 2 middle · 3 ring · 4 pinky</p>
               </div>
             ))}
           </div>
